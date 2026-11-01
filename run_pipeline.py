@@ -239,18 +239,19 @@ def main() -> None:
             narration_mode = args.mode or config.NARRATION_MODE
             try:
                 if config.CURATOR_MODE:
+                    from src.narration import generate_curator_caption
+                    caption_title = generate_curator_caption(post.title, post.subreddit)
                     script_data = {
                         "narration": "",
-                        "title": "",
+                        "title": caption_title,
                         "emphasis": [],
-                        "yt_title": post.title,
-                        "yt_hook": post.title,
-                        "yt_summary": post.title,
+                        "yt_title": caption_title,
+                        "yt_hook": caption_title,
+                        "yt_summary": caption_title,
                         "yt_category": "Entertainment",
                         "yt_content_tags": []
                     }
                     narration = ""
-                    caption_title = ""
                     emphasis = []
                 else:
                     script_data = generate_script_with_fallback(post, narration_mode, style, video_duration=meme_duration)
@@ -345,7 +346,7 @@ def main() -> None:
                 render_curator_short(
                     meme_video_path=meme_video_path,
                     output_path=video_path,
-                    title=post.title,
+                    title=caption_title or post.title,
                     branding_text=config.BRANDING_TEXT,
                     add_intro_outro=config.ADD_INTRO_OUTRO,
                     subreddit=post.subreddit

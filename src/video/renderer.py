@@ -580,7 +580,7 @@ def render_short(
     
     # 5. Draw Progress Bar (synced to exact render duration)
     if config.OVERLAY_PROGRESS_BAR:
-        progress_color = "0xFF5500"  # Orange
+        progress_color = getattr(config, "BADGE_COLOR", "#FB0101").replace("#", "0x")  # Red
         bar_y = 1880
         bar_height = 12
         filter_chains.append(
@@ -690,176 +690,90 @@ def render_curator_short(
     else:
         inputs = ["-i", str(meme_video_path)]
 
-    top_caption_path = None
-    bottom_caption_path = None
-    top_input_idx = None
-    bottom_input_idx = None
+    creator_header_path = None
+    header_input_idx = None
+    header_h = 246
     current_idx = 1
 
     if title and getattr(config, "CAPTION_ON_TOP", True):
-        from src.video.overlay import generate_creator_caption_banner, split_caption_for_landscape
+        from src.video.overlay import generate_creator_header_card
         try:
-            if meme_ar >= 1.2:
-                # ── Landscape video: ample space in both top and bottom zones ──
-                top_text, bottom_text = split_caption_for_landscape(title)
-                
-                # If title was short and stayed on top, add an engagement hook at the bottom to eliminate dead space
-                if not bottom_text and getattr(config, "BOTTOM_CALLOUT_ENABLED", True) and subreddit:
-                    sub_clean = subreddit.replace("r/", "").strip()
-                    bottom_text = f"r/{sub_clean} • Wait for it 👀"
-
-                top_caption_path = generate_creator_caption_banner(
-                    top_text,
-                    max_width=1000,
-                    min_width=860,
-                    is_bottom=False,
-                    is_vertical=False,
-                    filename="top_caption.png"
-                )
-
-                if bottom_text:
-                    bottom_caption_path = generate_creator_caption_banner(
-                        bottom_text,
-                        max_width=960,
-                        min_width=800,
-                        is_bottom=True,
-                        is_vertical=False,
-                        filename="bottom_caption.png"
-                    )
-
-            elif meme_ar >= 0.6:
-                # ── Square / 4:3 video: moderate space above video, clean below ──
-                top_caption_path = generate_creator_caption_banner(
-                    title,
-                    max_width=980,
-                    min_width=820,
-                    is_bottom=False,
-                    is_vertical=False,
-                    filename="top_caption.png"
-                )
-
-            else:
-                # ── Vertical / 9:16 video: full screen, safe zone overlay ──
-                top_caption_path = generate_creator_caption_banner(
-                    title,
-                    max_width=980,
-                    min_width=650,
-                    is_bottom=False,
-                    is_vertical=True,
-                    filename="top_caption.png"
-                )
-
-            # Assign sequential input indices for FFmpeg
-            if top_caption_path and top_caption_path.exists():
-                top_input_idx = current_idx
-                inputs.extend(["-loop", "1", "-i", str(top_caption_path)])
+            creator_header_path = generate_creator_header_card(
+                title=title,
+                output_filename="creator_header.png"
+            )
+            if creator_header_path and creator_header_path.exists():
+                from PIL import Image
+                _, header_h = Image.open(creator_header_path).size
+                header_input_idx = current_idx
+                inputs.extend(["-loop", "1", "-i", str(creator_header_path)])
                 current_idx += 1
-
-            if bottom_caption_path and bottom_caption_path.exists():
-                bottom_input_idx = current_idx
-                inputs.extend(["-loop", "1", "-i", str(bottom_caption_path)])
-                current_idx += 1
-
         except Exception as e:
-            logger.warning(f"Could not generate creator caption banners: {e}")
+            logger.warning(f"Could not generate creator header card: {e}")
     
     # 3. Build filter chains
     filter_chains = []
     
-    # A. Scale/Crop base canvas (1080x1920)
-    # If the video is portrait (already ~9:16), fit and pad to 1080x1920 with black.
-    # If the video is landscape/square, display at full 1080 width centered with blurred background (or clean black padding).
-    if meme_ar < 0.6:
-        # Portrait (vertical) video: scale to fit and pad to exactly 1080x1920
+    # White background canvas (as in reference screenshots)
+    raw_bg = getattr(config, "BACKGROUND_COLOR", "#FFFFFF")
+    bg_color = raw_bg if raw_bg.startswith("#") else f"#{raw_bg}"
+    filter_chains.append(
+        f"color=c={bg_color}:s=1080x1920:r={config.RENDER_FPS}[canvas]"
+    )
+    
+    # Ensure video clip ALWAYS spans 100% full video width (1080px edge-to-edge, zero side padding)
+    gap = 26
+    fg_w = 1080
+    video_x = 0
+    natural_h = make_even(1080 / meme_ar)
+    
+    # Maximum allowed height for the video to leave room for the creator header card and margins
+    max_fg_h = make_even(1920 - 100 - 120 - header_h - gap)
+    
+    if natural_h > max_fg_h:
+        # Tall portrait video: keep full 1080 width, crop excess height from vertical center
+        fg_h = max_fg_h
         filter_chains.append(
-            f"[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,"
-            f"pad=1080:1920:(1080-iw)/2:(1920-ih)/2:color=black[base_v]"
+            f"[0:v]setpts=PTS-STARTPTS,scale=1080:-2:flags=lanczos,crop=1080:{fg_h}:0:(ih-{fg_h})/2[fg_scaled]"
         )
     else:
-        # Landscape/Square video:
-        if getattr(config, "OVERLAY_BACKGROUND_BLUR", True):
-            filter_chains.append(
-                f"[0:v]split=2[bg_src][fg_src]"
-            )
-            # Background: blur and scale to fill 1080x1920
-            filter_chains.append(
-                f"[bg_src]scale=1080:1920:force_original_aspect_ratio=increase,"
-                f"crop=1080:1920,boxblur=30:5[bg_blurred]"
-            )
-            # Foreground: scale to full 1080 width (preserving original aspect ratio completely)
-            fg_w = 1080
-            fg_h = make_even(1080 / meme_ar)
-            filter_chains.append(
-                f"[fg_src]scale={fg_w}:{fg_h}:force_original_aspect_ratio=decrease[fg_scaled]"
-            )
-            # Overlay foreground onto blurred background
-            filter_chains.append(
-                f"[bg_blurred][fg_scaled]overlay=x=(W-w)/2:y=(H-h)/2[base_v]"
-            )
-        else:
-            # Clean black letterboxing (no blur, pure original video)
-            filter_chains.append(
-                f"[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,"
-                f"pad=1080:1920:(1080-iw)/2:(1920-ih)/2:color=black[base_v]"
-            )
+        # Landscape, square, or standard height: scale directly to 1080 width
+        fg_h = natural_h
+        filter_chains.append(
+            f"[0:v]setpts=PTS-STARTPTS,scale=1080:{fg_h}:flags=lanczos[fg_scaled]"
+        )
         
-    last_v_tag = "base_v"
-
-    # B. Overlay Top Caption Banner
-    if top_caption_path and top_input_idx is not None:
-        from PIL import Image
-        try:
-            _, th = Image.open(top_caption_path).size
-        except Exception:
-            th = 130
-
-        if meme_ar >= 1.2:
-            fg_h = make_even(1080 / meme_ar)
-            fg_top = (1920 - fg_h) // 2
-            if bottom_caption_path and bottom_input_idx is not None:
-                # When both top and bottom banners exist, position symmetrically around the video
-                top_y = max(120, fg_top - th - 65)
-            else:
-                # Single punchy caption on top: center in the top space
-                top_y = max(120, (fg_top - th) // 2)
-        elif meme_ar >= 0.6:
-            fg_h = make_even(1080 / meme_ar)
-            fg_top = (1920 - fg_h) // 2
-            top_y = max(120, fg_top - th - 50)
-        else:
-            top_y = 150
-
+    # Vertical Centering of [Header Card + Video]
+    total_h = header_h + gap + fg_h
+    header_y = max(100, (1920 - total_h) // 2)
+    video_y = header_y + header_h + gap
+    
+    if video_y + fg_h > 1820:
+        video_y = 1820 - fg_h
+        header_y = max(80, video_y - gap - header_h)
+        
+    last_v_tag = "canvas"
+    if creator_header_path and header_input_idx is not None:
         filter_chains.append(
-            f"[{last_v_tag}][{top_input_idx}:v]overlay=x=(W-w)/2:y={top_y}[v_top_caption]"
+            f"[{header_input_idx}:v]setpts=PTS-STARTPTS[header_stream]"
         )
-        last_v_tag = "v_top_caption"
-
-    # C. Overlay Bottom Caption Banner (for landscape videos)
-    if bottom_caption_path and bottom_input_idx is not None:
-        from PIL import Image
-        try:
-            _, bh = Image.open(bottom_caption_path).size
-        except Exception:
-            bh = 110
-
-        fg_h = make_even(1080 / meme_ar)
-        fg_top = (1920 - fg_h) // 2
-        fg_bottom = fg_top + fg_h
-        # Position bottom banner right below the video, leaving ample clearance above YouTube Shorts UI and player controls
-        bottom_y = min(1440, fg_bottom + 65)
-
         filter_chains.append(
-            f"[{last_v_tag}][{bottom_input_idx}:v]overlay=x=(W-w)/2:y={bottom_y}[v_bot_caption]"
+            f"[{last_v_tag}][header_stream]overlay=x=0:y={header_y}:shortest=0[canvas_with_header]"
         )
-        last_v_tag = "v_bot_caption"
+        last_v_tag = "canvas_with_header"
+        
+    filter_chains.append(
+        f"[{last_v_tag}][fg_scaled]overlay=x=0:y={video_y}:shortest=1[v_layout]"
+    )
+    last_v_tag = "v_layout"
         
     # D. Add Branding Overlay
     if branding_text:
         # Subtle channel branding/watermark at the bottom
         filter_chains.append(
             f"[{last_v_tag}]drawtext=text='{branding_text}':"
-            f"fontcolor=white@0.5:fontsize=36:font='Arial':x=(w-text_w)/2:y=h-180:"
-            f"borderw=2:bordercolor=black@0.5[v_brand]"
+            f"fontcolor=black@0.5:fontsize=36:font='Arial':x=(w-text_w)/2:y=h-180:"
+            f"borderw=1:bordercolor=white@0.5[v_brand]"
         )
         last_v_tag = "v_brand"
         
@@ -875,7 +789,7 @@ def render_curator_short(
         
     # E. Draw Progress Bar (synced to exact render duration)
     if config.OVERLAY_PROGRESS_BAR:
-        progress_color = "0xFF5500"  # Orange
+        progress_color = getattr(config, "BADGE_COLOR", "#FB0101").replace("#", "0x")  # Red
         bar_y = 1880
         bar_height = 12
         filter_chains.append(

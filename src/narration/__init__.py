@@ -88,3 +88,10 @@ def generate_script_with_fallback(
             "yt_category": "",
             "yt_content_tags": []
         }
+
+
+def generate_curator_caption(title: str, subreddit: str = "") -> str:
+    """Helper to generate a viral 4-12 word caption via Groq for Curator Shorts."""
+    from src.narration.groq import generate_curator_caption as _gcc
+    return _gcc(title, subreddit)
+

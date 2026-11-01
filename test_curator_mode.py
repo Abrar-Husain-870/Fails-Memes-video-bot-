@@ -73,12 +73,16 @@ def run_test():
     output_video = config.OUTPUT_DIR / "test_curator_final.mp4"
     output_video.unlink(missing_ok=True)
     
+    from src.narration import generate_curator_caption
+    curated_title = generate_curator_caption(selected_post.title, selected_post.subreddit)
+    logger.info(f"Curated title generated: '{curated_title}' (original: '{selected_post.title}')")
+
     logger.info("Rendering curator Short...")
     try:
         render_curator_short(
             meme_video_path=video_path,
             output_path=output_video,
-            title=selected_post.title,
+            title=curated_title,
             branding_text="",
             add_intro_outro=False,
             subreddit=selected_post.subreddit

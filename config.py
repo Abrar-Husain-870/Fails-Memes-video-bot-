@@ -120,7 +120,7 @@ OLLAMA_API_URL = _env("OLLAMA_API_URL", "http://localhost:11434/v1")
 # Resolve default model names if none is provided
 if not LLM_MODEL:
     if LLM_PROVIDER == "groq":
-        LLM_MODEL = "llama-3.3-70b-versatile"
+        LLM_MODEL = "qwen/qwen3.8-27b"
     elif LLM_PROVIDER == "deepseek":
         LLM_MODEL = "deepseek-chat"
     elif LLM_PROVIDER == "gemini":
@@ -254,4 +254,12 @@ REJECT_WATERMARKS = _env_bool("REJECT_WATERMARKS", False)
 BRANDING_TEXT = _env("BRANDING_TEXT", "")
 ADD_INTRO_OUTRO = _env_bool("ADD_INTRO_OUTRO", False)
 CAPTION_ON_TOP = _env_bool("CAPTION_ON_TOP", True)
-BOTTOM_CALLOUT_ENABLED = _env_bool("BOTTOM_CALLOUT_ENABLED", True)
+BOTTOM_CALLOUT_ENABLED = _env_bool("BOTTOM_CALLOUT_ENABLED", False)
+
+# ── Creator Card & Visual Style Settings ─────────────────────────────
+PROFILE_PICTURE_PATH = ROOT / _env("PROFILE_PICTURE_PATH", f"{DATA_DIR_NAME}/assets/Diet Joke.jpg")
+CHANNEL_DISPLAY_NAME = _env("CHANNEL_DISPLAY_NAME", "Diet Joke")
+CHANNEL_HANDLE = _env("CHANNEL_HANDLE", "@DietJoke")
+BADGE_COLOR = _env("BADGE_COLOR", "#FB0101")  # Red verified tick circle
+BACKGROUND_COLOR = _env("BACKGROUND_COLOR", "#FFFFFF")  # Pure white background
+FIT_CLIP_WIDTH = _env_bool("FIT_CLIP_WIDTH", True)

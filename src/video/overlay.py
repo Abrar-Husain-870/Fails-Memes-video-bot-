@@ -351,3 +351,290 @@ def generate_creator_caption_banner(
 
 # Backward compatibility alias
 generate_top_caption_banner = generate_creator_caption_banner
+
+
+def _parse_color(c: str) -> tuple[int, int, int, int]:
+    """Parse hex color like #FB0101 into RGBA tuple."""
+    c = c.lstrip("#")
+    if len(c) == 6:
+        return (int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16), 255)
+    elif len(c) == 8:
+        return (int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16), int(c[6:8], 16))
+    return (251, 1, 1, 255)
+
+
+def _draw_verified_badge(size: int = 40, bg_color: tuple[int, int, int, int] = (251, 1, 1, 255)) -> Image.Image:
+    """Renders a supersampled, anti-aliased verified checkmark badge."""
+    scale = 4
+    s = size * scale
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse([(0, 0), (s - 1, s - 1)], fill=bg_color)
+    
+    # Twitter / X checkmark points
+    pts = [
+        (s * 0.28, s * 0.52),
+        (s * 0.44, s * 0.68),
+        (s * 0.74, s * 0.36),
+    ]
+    check_width = max(int(s * 0.105), 3)
+    d.line(pts, fill=(255, 255, 255, 255), width=check_width, joint="curve")
+    return img.resize((size, size), Image.Resampling.LANCZOS)
+
+
+def _create_circular_avatar(img_path: Path | str, size: int = 132) -> Image.Image:
+    """Loads and returns a circular-masked avatar with generous inner margin so nothing touches or clips the border."""
+    path = Path(img_path)
+    if not path.exists():
+        assets_p = getattr(config, "ASSETS_DIR", config.ROOT / "data" / "assets")
+        alt_paths = [
+            assets_p / "Diet Joke.jpg",
+            assets_p / "Diet Joke.jpeg",
+            assets_p / "Diet Joke.png",
+            config.ROOT / "data" / "assets" / "Diet Joke.jpg",
+        ]
+        for ap in alt_paths:
+            if ap.exists():
+                path = ap
+                break
+                
+    if path.exists():
+        raw = Image.open(path).convert("RGBA")
+        import numpy as np
+        arr = np.array(raw)
+        # Isolate content bounding box (skip outer white background)
+        is_content = (arr[:, :, 0] < 240) | (arr[:, :, 1] < 240) | (arr[:, :, 2] < 240)
+        ys, xs = np.where(is_content)
+        if len(xs) > 0 and len(ys) > 0:
+            tight_logo = raw.crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
+        else:
+            min_dim = min(raw.size)
+            left = (raw.width - min_dim) // 2
+            top = (raw.height - min_dim) // 2
+            tight_logo = raw.crop((left, top, left + min_dim, top + min_dim))
+            
+        # Scale logo with generous inner breathing room (74% of circle diameter)
+        # to ensure there is plenty of clean padding and no text touches the border
+        target_w = int(size * 0.74)
+        scale_factor = target_w / tight_logo.width
+        target_h = int(tight_logo.height * scale_factor)
+        if target_h > int(size * 0.74):
+            target_h = int(size * 0.74)
+            target_w = int(tight_logo.width * (target_h / tight_logo.height))
+            
+        tight_logo = tight_logo.resize((target_w, target_h), Image.Resampling.LANCZOS)
+    else:
+        raw = Image.new("RGBA", (size, size), (240, 242, 245, 255))
+        d_raw = ImageDraw.Draw(raw)
+        d_raw.text((size // 4, size // 4), "DJ", fill=(251, 1, 1, 255))
+        tight_logo = raw
+        target_w, target_h = size, size
+        
+    scale = 4
+    canvas_s = size * scale
+    circle_img = Image.new("RGBA", (canvas_s, canvas_s), (255, 255, 255, 0))
+    d_circ = ImageDraw.Draw(circle_img)
+    d_circ.ellipse([(0, 0), (canvas_s - 1, canvas_s - 1)], fill=(255, 255, 255, 255))
+    
+    logo_s = tight_logo.resize((target_w * scale, target_h * scale), Image.Resampling.LANCZOS)
+    pos_x = (canvas_s - logo_s.width) // 2
+    pos_y = (canvas_s - logo_s.height) // 2
+    circle_img.paste(logo_s, (pos_x, pos_y), logo_s)
+    
+    d_circ.ellipse([(0, 0), (canvas_s - 1, canvas_s - 1)], outline=(228, 230, 235, 255), width=2 * scale)
+    return circle_img.resize((size, size), Image.Resampling.LANCZOS)
+
+
+def _is_emoji_char(c: str) -> bool:
+    """Fast check for emoji codepoint ranges."""
+    cp = ord(c)
+    return (
+        0x1F600 <= cp <= 0x1F64F or
+        0x1F300 <= cp <= 0x1F5FF or
+        0x1F680 <= cp <= 0x1F6FF or
+        0x1F700 <= cp <= 0x1F77F or
+        0x1F780 <= cp <= 0x1F7FF or
+        0x1F800 <= cp <= 0x1F8FF or
+        0x1F900 <= cp <= 0x1F9FF or
+        0x1FA00 <= cp <= 0x1FA6F or
+        0x1FA70 <= cp <= 0x1FAFF or
+        0x2600 <= cp <= 0x26FF or
+        0x2700 <= cp <= 0x27BF or
+        0xFE00 <= cp <= 0xFE0F or
+        0x1F1E6 <= cp <= 0x1F1FF
+    )
+
+
+def _segment_text(text: str) -> list[tuple[str, bool]]:
+    """Split text into segments of (text_chunk, is_emoji)."""
+    segments = []
+    curr = ""
+    is_em = None
+    for c in text:
+        e = _is_emoji_char(c)
+        if is_em is None:
+            is_em = e
+            curr = c
+        elif e == is_em:
+            curr += c
+        else:
+            segments.append((curr, is_em))
+            curr = c
+            is_em = e
+    if curr:
+        segments.append((curr, is_em))
+    return segments
+
+
+def _get_text_width(text: str, font_text: ImageFont.FreeTypeFont, font_emoji: ImageFont.FreeTypeFont, draw: ImageDraw.ImageDraw) -> int:
+    """Compute total rendered width of text mixing font_text and font_emoji."""
+    w = 0
+    for seg, is_em in _segment_text(text):
+        f = font_emoji if is_em else font_text
+        bbox = draw.textbbox((0, 0), seg, font=f)
+        w += bbox[2] - bbox[0]
+    return w
+
+
+def _wrap_text_mixed(text: str, font_text: ImageFont.FreeTypeFont, font_emoji: ImageFont.FreeTypeFont, max_width: int, draw: ImageDraw.ImageDraw) -> list[str]:
+    """Word-wrap text accounting for variable emoji glyph widths."""
+    words = text.split()
+    lines = []
+    curr = []
+    for w in words:
+        curr.append(w)
+        line_str = " ".join(curr)
+        if _get_text_width(line_str, font_text, font_emoji, draw) > max_width:
+            if len(curr) == 1:
+                lines.append(line_str)
+                curr = []
+            else:
+                curr.pop()
+                lines.append(" ".join(curr))
+                curr = [w]
+    if curr:
+        lines.append(" ".join(curr))
+    return lines
+
+
+def generate_creator_header_card(
+    title: str,
+    output_filename: str = "creator_header.png",
+    display_name: str | None = None,
+    handle: str | None = None,
+    profile_pic_path: Path | str | None = None
+) -> Path:
+    """
+    Generate an authentic, high-impact Twitter/X style creator card overlay (as in reference 1 & 2).
+    Includes circular avatar, display name, red verified tick badge, handle, and bold caption with emoji support.
+    """
+    output_path = config.OUTPUT_DIR / output_filename
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    clean_title = re.sub(r'\s+', ' ', title).strip()
+    if not clean_title:
+        clean_title = "Bro doubted physics for a sec 😂"
+        
+    name = display_name or getattr(config, "CHANNEL_DISPLAY_NAME", "Diet Joke")
+    hnd = handle or getattr(config, "CHANNEL_HANDLE", "@DietJoke")
+    pfp_path = profile_pic_path or getattr(config, "PROFILE_PICTURE_PATH", config.ROOT / "data" / "assets" / "Diet Joke.jpg")
+    badge_hex = getattr(config, "BADGE_COLOR", "#FB0101")
+    badge_color = _parse_color(badge_hex)
+
+    width = 1080
+    pad_x = 48
+    avatar_size = 132
+    badge_size = 40
+    
+    # Fonts
+    font_name = None
+    font_caption = None
+    for fp in ["C:/Windows/Fonts/segoeuib.ttf", "C:/Windows/Fonts/arialbd.ttf", "arialbd.ttf", "DejaVuSans-Bold.ttf"]:
+        try:
+            font_name = ImageFont.truetype(fp, 52)
+            font_caption = ImageFont.truetype(fp, 54)
+            break
+        except Exception:
+            continue
+    if font_name is None:
+        font_name = ImageFont.load_default()
+        font_caption = ImageFont.load_default()
+        
+    font_handle = None
+    for fp in ["C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/arial.ttf", "arial.ttf", "DejaVuSans.ttf"]:
+        try:
+            font_handle = ImageFont.truetype(fp, 40)
+            break
+        except Exception:
+            continue
+    if font_handle is None:
+        font_handle = ImageFont.load_default()
+        
+    font_emoji = None
+    for fp in ["C:/Windows/Fonts/seguiemj.ttf", "C:/Windows/Fonts/seguisym.ttf"]:
+        try:
+            font_emoji = ImageFont.truetype(fp, 48)
+            break
+        except Exception:
+            continue
+    if font_emoji is None:
+        font_emoji = font_caption
+
+    dummy = Image.new("RGBA", (width, 100))
+    d_dummy = ImageDraw.Draw(dummy)
+    
+    max_text_w = width - (pad_x * 2)
+    caption_lines = _wrap_text_mixed(clean_title, font_caption, font_emoji, max_text_w, d_dummy)
+    if not caption_lines:
+        caption_lines = [clean_title]
+        
+    line_h = 72
+    caption_total_h = len(caption_lines) * line_h
+    gap_after_avatar = 32
+    
+    total_h = avatar_size + gap_after_avatar + caption_total_h + 10
+    
+    card = Image.new("RGBA", (width, total_h), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(card)
+    
+    # 1. Circular Avatar
+    pfp = _create_circular_avatar(pfp_path, size=avatar_size)
+    card.paste(pfp, (pad_x, 0), pfp)
+    
+    # 2. Display Name
+    name_x = pad_x + avatar_size + 24
+    name_y = 12
+    draw.text((name_x, name_y), name, font=font_name, fill=(15, 20, 25, 255))
+    
+    # 3. Red Verified Badge (accurately centered vertically with the display name text ink)
+    name_bbox = d_dummy.textbbox((0, 0), name, font=font_name)
+    name_w = name_bbox[2] - name_bbox[0]
+    text_mid_y = name_y + (name_bbox[1] + name_bbox[3]) / 2.0
+    badge_y = int(round(text_mid_y - badge_size / 2.0))
+    badge_x = name_x + name_w + 14
+    badge = _draw_verified_badge(size=badge_size, bg_color=badge_color)
+    card.paste(badge, (badge_x, badge_y), badge)
+    
+    # 4. Handle
+    handle_y = name_y + 58
+    draw.text((name_x, handle_y), hnd, font=font_handle, fill=(83, 100, 113, 255))
+    
+    # 5. Caption with mixed emoji support
+    caption_y = avatar_size + gap_after_avatar
+    for line in caption_lines:
+        cur_x = pad_x
+        for seg, is_em in _segment_text(line):
+            f = font_emoji if is_em else font_caption
+            bbox = draw.textbbox((0, 0), seg, font=f)
+            seg_w = bbox[2] - bbox[0]
+            if is_em:
+                draw.text((cur_x, caption_y - 2), seg, font=f, embedded_color=True)
+            else:
+                draw.text((cur_x, caption_y), seg, font=f, fill=(15, 20, 25, 255))
+            cur_x += seg_w + (4 if is_em else 0)
+        caption_y += line_h
+        
+    card.save(output_path, "PNG")
+    logger.info(f"Creator header card generated at {output_path} ({width}x{total_h})")
+    return output_path
+

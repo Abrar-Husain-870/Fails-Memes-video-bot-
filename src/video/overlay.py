@@ -621,6 +621,9 @@ def generate_creator_header_card(
     
     # 5. Caption with mixed emoji support
     caption_y = avatar_size + gap_after_avatar
+    ref_text_bbox = draw.textbbox((0, 0), "Bro angle Hg", font=font_caption)
+    text_mid_y = (ref_text_bbox[1] + ref_text_bbox[3]) / 2.0
+
     for line in caption_lines:
         cur_x = pad_x
         for seg, is_em in _segment_text(line):
@@ -628,7 +631,9 @@ def generate_creator_header_card(
             bbox = draw.textbbox((0, 0), seg, font=f)
             seg_w = bbox[2] - bbox[0]
             if is_em:
-                draw.text((cur_x, caption_y - 2), seg, font=f, embedded_color=True)
+                em_mid_y = (bbox[1] + bbox[3]) / 2.0
+                em_y = caption_y + int(round(text_mid_y - em_mid_y))
+                draw.text((cur_x, em_y), seg, font=f, embedded_color=True)
             else:
                 draw.text((cur_x, caption_y), seg, font=f, fill=(15, 20, 25, 255))
             cur_x += seg_w + (4 if is_em else 0)

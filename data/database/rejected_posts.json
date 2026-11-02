@@ -46,5 +46,13 @@
     "detection_category": "meme_suitability_filter",
     "reason": "The meme relies on a common understanding of the Trump presidency and the concept of irony.",
     "timestamp": "2026-07-16T23:37:43Z"
+  },
+  {
+    "reddit_id": "1xivbav",
+    "subreddit": "Whatcouldgowrong",
+    "risk_score": "High Risk",
+    "detection_category": "Dangerous challenges, Criminal instructions",
+    "reason": "The content describes using an ATV (All-Terrain Vehicle) and a tow strap for 'indoor ceiling demolition.' This implies a highly dangerous and likely illegal activity involving heavy machinery in a residential or indoor setting, which poses a severe risk of structural collapse, fire, or injury. It falls under dangerous challenges and potentially criminal instructions (unauthorized demolition or property damage).",
+    "timestamp": "2026-11-02T20:51:42Z"
   }
 ]

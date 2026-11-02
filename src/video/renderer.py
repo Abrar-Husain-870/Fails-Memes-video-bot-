@@ -160,7 +160,13 @@ def _get_video_dimensions(path: Path) -> Tuple[int, int]:
 
 
 def _has_audio(path: Path) -> bool:
-    """Check if the video file contains an audio stream using ffprobe."""
+    """
+    Check if the video/audio file contains an audible audio stream.
+    
+    1. Checks if an audio stream exists using ffprobe.
+    2. If an audio stream exists, runs a fast volumedetect scan using ffmpeg to verify
+       that it contains actual audible sound and is not completely silent (-91 dB / <= -45 dB).
+    """
     cmd = [
         "ffprobe", "-v", "error",
         "-select_streams", "a",
@@ -170,9 +176,48 @@ def _has_audio(path: Path) -> bool:
     ]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=FFPROBE_TIMEOUT)
-        return "audio" in r.stdout.lower()
-    except Exception:
+        if "audio" not in r.stdout.lower():
+            return False
+    except Exception as e:
+        logger.warning(f"Error checking audio stream existence with ffprobe: {e}")
         return False
+
+    # Audible volume check: detects if audio stream is silent (e.g. max_volume <= -45 dB)
+    null_dev = "NUL" if os.name == "nt" else "/dev/null"
+    cmd_vol = [
+        "ffmpeg", "-v", "info",
+        "-vn", "-sn", "-dn",
+        "-i", str(path),
+        "-t", "15",
+        "-af", "volumedetect",
+        "-f", "null", null_dev
+    ]
+    try:
+        r_vol = subprocess.run(cmd_vol, capture_output=True, text=True, timeout=10)
+        stderr = r_vol.stderr or ""
+        max_match = re.search(r"max_volume:\s*(-?[\d\.]+)\s*dB", stderr)
+        mean_match = re.search(r"mean_volume:\s*(-?[\d\.]+)\s*dB", stderr)
+        
+        if max_match:
+            max_db = float(max_match.group(1))
+            if max_db <= -45.0:
+                logger.info(
+                    f"Video '{path.name}' has audio stream, but it is silent "
+                    f"(max_volume={max_db:.1f} dB <= -45.0 dB). Treating as no sound."
+                )
+                return False
+        if mean_match:
+            mean_db = float(mean_match.group(1))
+            if mean_db <= -55.0:
+                logger.info(
+                    f"Video '{path.name}' has audio stream, but it is silent "
+                    f"(mean_volume={mean_db:.1f} dB <= -55.0 dB). Treating as no sound."
+                )
+                return False
+        return True
+    except Exception as e:
+        logger.warning(f"Error checking audio volume with ffmpeg volumedetect: {e}. Defaulting to True.")
+        return True
 
 
 def _get_fallback_meme_audio() -> Optional[Path]:
@@ -181,9 +226,20 @@ def _get_fallback_meme_audio() -> Optional[Path]:
     search_dirs = [
         assets_dir,
         assets_dir / "cat_reactions",
+        assets_dir / "Comments",
         config.ROOT / "data" / "assets",
         config.ROOT / "data" / "assets" / "cat_reactions",
+        config.ROOT / "data" / "assets" / "Comments",
+        config.ROOT,
     ]
+    # Check exact filename first
+    for d in search_dirs:
+        if not d.exists():
+            continue
+        exact = d / "Ocean meme audio.mpeg"
+        if exact.exists():
+            return exact
+    # Case-insensitive / extension-flexible search
     for d in search_dirs:
         if not d.exists():
             continue
@@ -594,14 +650,28 @@ def render_short(
     )
     
     audio_map_tag = "[delayed_audio]"
-    if is_meme_video and overlay_card_path and overlay_card_path.exists() and _has_audio(overlay_card_path):
-        filter_chains.append(
-            "[2:a]volume=0.15[meme_a]"
-        )
-        filter_chains.append(
-            "[delayed_audio][meme_a]amix=inputs=2:duration=longest:dropout_transition=0,volume=1.5[mixed_audio]"
-        )
-        audio_map_tag = "[mixed_audio]"
+    if is_meme_video and overlay_card_path and overlay_card_path.exists():
+        if _has_audio(overlay_card_path):
+            filter_chains.append(
+                "[2:a]volume=0.15[meme_a]"
+            )
+            filter_chains.append(
+                "[delayed_audio][meme_a]amix=inputs=2:duration=longest:dropout_transition=0,volume=1.5[mixed_audio]"
+            )
+            audio_map_tag = "[mixed_audio]"
+        else:
+            fallback_audio_path = _get_fallback_meme_audio()
+            if fallback_audio_path and fallback_audio_path.exists():
+                fallback_in_idx = len(inputs)
+                inputs.extend(["-stream_loop", "-1", "-i", str(fallback_audio_path)])
+                filter_chains.append(
+                    f"[{fallback_in_idx}:a]volume=0.15[meme_a]"
+                )
+                filter_chains.append(
+                    "[delayed_audio][meme_a]amix=inputs=2:duration=longest:dropout_transition=0,volume=1.5[mixed_audio]"
+                )
+                audio_map_tag = "[mixed_audio]"
+                logger.info(f"Standard short: Meme video has no sound. Using fallback audio '{fallback_audio_path.name}' at volume 0.15")
         
     filter_complex_str = ";".join(filter_chains)
     
@@ -921,7 +991,10 @@ def render_curator_short(
                 )
                 main_audio_tag = "a_main"
             else:
-                main_audio_tag = f"{fallback_input_idx}:a:0"
+                filter_chains.append(
+                    f"[{fallback_input_idx}:a]volume=1.0[a_main]"
+                )
+                main_audio_tag = "a_main"
         elif pop_audio_tags:
             # Silent video, create silent base track to mix pop audio
             silent_input_idx = current_idx
@@ -950,7 +1023,7 @@ def render_curator_short(
         "-filter_complex", filter_complex_str,
         "-map", f"[{last_v_tag}]"
     ])
-    if has_audio or fallback_input_idx is not None:
+    if main_audio_tag is not None:
         cmd.extend(audio_map_args)
         
     cmd.extend([
@@ -961,7 +1034,7 @@ def render_curator_short(
         "-profile:v", "high",
         "-level", "4.2"
     ])
-    if has_audio or fallback_input_idx is not None:
+    if main_audio_tag is not None:
         cmd.extend([
             "-c:a", "aac",
             "-b:a", "256k",

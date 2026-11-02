@@ -57,17 +57,17 @@ FUNNY_USER_PROFILES = [
 def choose_comment_box_type(comment_text: str) -> str:
     """
     Select comment box size based on comment content length:
-    - Short comments (<= 9 words or <= 45 characters)   -> 'small' (Small1.png)
-    - Medium comments (10-15 words or <= 75 characters)  -> 'medium' (Medium1.png or Medium2.png)
-    - Longer comments (16+ words or > 75 characters)    -> 'large' (Large1.png)
+    - Short punchy comments (<= 5 words and <= 28 characters) -> 'small' (Small1.png)
+    - Medium comments (6 to 14 words or <= 70 characters)     -> 'medium' (Medium1.png or Medium2.png)
+    - Longer comments (15+ words or > 70 characters)         -> 'large' (Large1.png)
     """
     words = comment_text.strip().split()
     word_count = len(words)
     char_count = len(comment_text.strip())
 
-    if word_count <= 9 or char_count <= 45:
+    if word_count <= 5 and char_count <= 28:
         return "small"
-    elif word_count <= 15 or char_count <= 75:
+    elif word_count <= 14 and char_count <= 70:
         return random.choice(["medium1", "medium2"])
     else:
         return "large"
@@ -181,11 +181,11 @@ def _draw_fitted_comment_text(
     y: int,
     max_w: int,
     max_h: int,
-    initial_font_size: int = 32,
+    initial_font_size: int = 38,
     text_color: tuple = (18, 18, 20, 255),
     line_spacing: int = 6,
     max_lines: int = 3,
-    min_font_size: int = 24
+    min_font_size: int = 28
 ) -> int:
     """
     Renders comment text wrapped inside a strictly bounded rectangle (max_w, max_h).
@@ -247,9 +247,10 @@ def _render_small_template(
     avatar_path: Optional[Path] = None
 ) -> Image.Image:
     """
-    Renders Small1.png (Instagram compact single-line or 2-line pill).
-    Designed specifically for short comments.
+    Renders Small1.png (Instagram compact pill).
+    Designed specifically for short punchy 3-5 word comments with large, bold text.
     """
+    factor = target_width / 860.0
     scale = target_width / raw_card.width
     target_h = int(round(raw_card.height * scale))
     card = raw_card.resize((target_width, target_h), Image.Resampling.LANCZOS)
@@ -262,57 +263,38 @@ def _render_small_template(
     clean_handle = f"@{handle}" if not handle.startswith("@") else handle
 
     # Overlay circular profile picture inside Instagram gradient ring
-    # Center is at cx=85/83, cy=85, diameter=88
     if avatar_path and avatar_path.exists():
         try:
-            dia = 88
-            cx = 85 if is_dark else 83
-            cy = 85
+            dia = int(round(88 * factor))
+            cx = int(round((85 if is_dark else 83) * factor))
+            cy = int(round(85 * factor))
             av = load_and_crop_circular_avatar(avatar_path, dia)
             card.alpha_composite(av, (cx - dia // 2, cy - dia // 2))
         except Exception as e:
             logger.warning(f"Failed to composite avatar in Small1: {e}")
 
     # Mask original text area
-    mask_x1 = 158
-    mask_y1 = int(10 * scale)
-    mask_x2 = target_width - int(60 * scale)
+    mask_x1 = int(round(158 * factor))
+    mask_y1 = int(12 * scale)
+    mask_x2 = target_width - int(55 * scale)
     mask_y2 = target_h - int(50 * scale)
     draw.rectangle([mask_x1, mask_y1, mask_x2, mask_y2], fill=bg_color)
 
-    font_size = 26
-    font_author = _get_font(bold=True, size=font_size)
-    font_comment = _get_font(bold=False, size=font_size)
-    font_emoji = _get_font(bold=False, size=int(font_size * 0.95), is_emoji=True)
+    font_author = _get_font(bold=True, size=int(round(30 * factor)))
+    draw.text((mask_x1, int(18 * factor)), clean_handle, font=font_author, fill=author_color)
 
-    max_text_w = mask_x2 - mask_x1 - 10
-    author_w = draw.textlength(clean_handle, font=font_author)
-    comment_w = _get_text_width(comment_text, font_comment, font_emoji, draw)
-
-    if author_w + 14 + comment_w <= max_text_w:
-        # Fits on a single neat line
-        y_pos = int(36 * (target_h / 169))
-        draw.text((mask_x1, y_pos), clean_handle, font=font_author, fill=author_color)
-        x_com = mask_x1 + int(author_w) + 14
-        for seg, is_em in _segment_text(comment_text):
-            f = font_emoji if is_em else font_comment
-            bbox = draw.textbbox((0, 0), seg, font=f)
-            draw.text((x_com, y_pos), seg, font=f, fill=text_color, embedded_color=is_em)
-            x_com += (bbox[2] - bbox[0]) + (4 if is_em else 0)
-    else:
-        # 2 lines: handle on line 1, comment text on line 2
-        draw.text((mask_x1, int(18 * (target_h / 169))), clean_handle, font=font_author, fill=author_color)
-        _draw_fitted_comment_text(
-            draw, comment_text,
-            x=mask_x1,
-            y=int(54 * (target_h / 169)),
-            max_w=max_text_w,
-            max_h=int(48 * (target_h / 169)),
-            initial_font_size=24,
-            text_color=text_color,
-            max_lines=1,
-            min_font_size=18
-        )
+    # Render punchy comment text clearly below handle
+    _draw_fitted_comment_text(
+        draw, comment_text,
+        x=mask_x1,
+        y=int(56 * factor),
+        max_w=mask_x2 - mask_x1 - 10,
+        max_h=int(52 * factor),
+        initial_font_size=36,
+        text_color=text_color,
+        max_lines=1,
+        min_font_size=28
+    )
 
     return card
 
@@ -327,8 +309,9 @@ def _render_medium1_template(
     avatar_path: Optional[Path] = None
 ) -> Image.Image:
     """
-    Renders Medium1.png (Instagram 2-line comment card).
+    Renders Medium1.png (Instagram comment card).
     """
+    factor = target_width / 860.0
     scale = target_width / raw_card.width
     target_h = int(round(raw_card.height * scale))
     card = raw_card.resize((target_width, target_h), Image.Resampling.LANCZOS)
@@ -342,30 +325,30 @@ def _render_medium1_template(
     clean_handle = f"@{handle}" if not handle.startswith("@") else handle
 
     # Overlay circular profile picture inside Instagram gradient ring
-    # Center is at cx=96/95, cy=104/100, diameter=90
     if avatar_path and avatar_path.exists():
         try:
-            dia = 90
-            cx = 96 if is_dark else 95
-            cy = 104 if is_dark else 100
+            dia = int(round(90 * factor))
+            cx = int(round((96 if is_dark else 95) * factor))
+            cy = int(round((104 if is_dark else 100) * factor))
             av = load_and_crop_circular_avatar(avatar_path, dia)
             card.alpha_composite(av, (cx - dia // 2, cy - dia // 2))
         except Exception as e:
             logger.warning(f"Failed to composite avatar in Medium1: {e}")
 
     # Mask original text area
-    mask_x1 = 158
+    mask_x1 = int(round(158 * factor))
     mask_y1 = int(20 * scale)
-    mask_x2 = target_width - int(80 * scale)
+    mask_x2 = target_width - int(75 * scale)
     mask_y2 = target_h - int(60 * scale)
     draw.rectangle([mask_x1, mask_y1, mask_x2, mask_y2], fill=bg_color)
 
-    font_author = _get_font(bold=True, size=28)
+    font_author = _get_font(bold=True, size=int(round(32 * factor)))
     draw.text((mask_x1, int(24 * scale)), clean_handle, font=font_author, fill=author_color)
     time_x = mask_x1 + int(draw.textlength(clean_handle, font=font_author)) + 14
-    draw.text((time_x, int(26 * scale)), f"{random.randint(2, 14)}h", font=_get_font(bold=False, size=22), fill=sub_color)
+    draw.text((time_x, int(26 * scale)), f"{random.randint(2, 14)}h", font=_get_font(bold=False, size=int(round(24 * factor))), fill=sub_color)
 
-    max_text_w = min(570, mask_x2 - mask_x1 - 10)
+    # Use full available width for large, mobile-friendly font
+    max_text_w = mask_x2 - mask_x1 - 10
     max_text_h = mask_y2 - int(66 * scale) - 6
     _draw_fitted_comment_text(
         draw, comment_text,
@@ -373,11 +356,11 @@ def _render_medium1_template(
         y=int(66 * scale),
         max_w=max_text_w,
         max_h=max_text_h,
-        initial_font_size=32,
+        initial_font_size=38,
         text_color=text_color,
         line_spacing=8,
         max_lines=2,
-        min_font_size=24
+        min_font_size=30
     )
 
     return card
@@ -395,6 +378,7 @@ def _render_medium2_template(
     """
     Renders Medium2.png (Twitter/X Tweet card).
     """
+    factor = target_width / 860.0
     scale = target_width / raw_card.width
     target_h = int(round(raw_card.height * scale))
     card = raw_card.resize((target_width, target_h), Image.Resampling.LANCZOS)
@@ -408,19 +392,17 @@ def _render_medium2_template(
     clean_handle = f"@{handle}" if not handle.startswith("@") else handle
 
     # Overlay circular profile picture over Twitter placeholder circle
-    # Center is at cx=93/91, cy=62/64, diameter=86
     if avatar_path and avatar_path.exists():
         try:
-            dia = 86
-            cx = 93 if is_dark else 91
-            cy = 62 if is_dark else 64
+            dia = int(round(86 * factor))
+            cx = int(round((93 if is_dark else 91) * factor))
+            cy = int(round((62 if is_dark else 64) * factor))
             av = load_and_crop_circular_avatar(avatar_path, dia)
             card.alpha_composite(av, (cx - dia // 2, cy - dia // 2))
         except Exception as e:
             logger.warning(f"Failed to composite avatar in Medium2: {e}")
     else:
-        # Fallback to initials circle
-        av_cx, av_cy, av_r = 91, 64, 44
+        av_cx, av_cy, av_r = int(round(91 * factor)), int(round(64 * factor)), int(round(44 * factor))
         draw.ellipse([av_cx - av_r, av_cy - av_r, av_cx + av_r, av_cy + av_r], fill=(235, 87, 87, 255))
         initial = (author_name[0] if author_name else "U").upper()
         font_av = _get_font(bold=True, size=int(40 * scale))
@@ -428,27 +410,28 @@ def _render_medium2_template(
         draw.text((av_cx - (bbox_in[2] - bbox_in[0]) // 2, av_cy - (bbox_in[3] - bbox_in[1]) // 2 - 2), initial, font=font_av, fill=(255, 255, 255, 255))
 
     # Mask header text and comment body
-    mask_x1 = 155
+    mask_x1 = int(round(155 * factor))
     mask_y1 = int(18 * scale)
-    mask_x2 = target_width - int(120 * scale)
+    mask_x2 = target_width - int(115 * scale)
     mask_y2 = target_h - int(72 * scale)
     draw.rectangle([mask_x1, mask_y1, mask_x2, mask_y2], fill=bg_color)
 
     # Draw Name + Verified badge + @handle
-    font_author = _get_font(bold=True, size=28)
+    font_author = _get_font(bold=True, size=int(round(32 * factor)))
     draw.text((mask_x1, int(22 * scale)), author_name, font=font_author, fill=author_color)
     author_w = draw.textlength(author_name, font=font_author)
 
     badge_x = mask_x1 + int(author_w) + 10
     badge_y = int(28 * scale)
-    badge_size = 18
+    badge_size = int(round(18 * factor))
     draw.ellipse([badge_x, badge_y, badge_x + badge_size, badge_y + badge_size], fill=(29, 155, 240, 255))
     draw.text((badge_x + 3, badge_y - 2), "✔", font=_get_font(bold=True, size=13), fill=(255, 255, 255, 255))
 
     handle_x = badge_x + badge_size + 10
-    draw.text((handle_x, int(26 * scale)), clean_handle.lower(), font=_get_font(bold=False, size=22), fill=sub_color)
+    draw.text((handle_x, int(26 * scale)), clean_handle.lower(), font=_get_font(bold=False, size=int(round(24 * factor))), fill=sub_color)
 
-    max_text_w = min(560, mask_x2 - mask_x1)
+    # Use full available width for large, mobile-friendly font
+    max_text_w = mask_x2 - mask_x1 - 10
     max_text_h = mask_y2 - int(66 * scale) - 6
     _draw_fitted_comment_text(
         draw, comment_text,
@@ -456,11 +439,11 @@ def _render_medium2_template(
         y=int(66 * scale),
         max_w=max_text_w,
         max_h=max_text_h,
-        initial_font_size=32,
+        initial_font_size=38,
         text_color=text_color,
         line_spacing=8,
         max_lines=2,
-        min_font_size=24
+        min_font_size=30
     )
 
     return card
@@ -477,8 +460,9 @@ def _render_large_template(
 ) -> Image.Image:
     """
     Renders Large1.png (YouTube comment box).
-    Fits longer comments (16+ words / 75+ characters).
+    Fits longer comments (15+ words) with bold, multi-line typography.
     """
+    factor = target_width / 860.0
     scale = target_width / raw_card.width
     target_h = int(round(raw_card.height * scale))
     card = raw_card.resize((target_width, target_h), Image.Resampling.LANCZOS)
@@ -490,30 +474,29 @@ def _render_large_template(
     sub_color = (160, 160, 160, 255) if is_dark else (115, 115, 115, 255)
 
     # Overlay circular profile picture over YouTube hiker avatar
-    # Center is at cx=62/64, cy=72, diameter=76
     if avatar_path and avatar_path.exists():
         try:
-            dia = 76
-            cx = 62 if is_dark else 64
-            cy = 72
+            dia = int(round(76 * factor))
+            cx = int(round((62 if is_dark else 64) * factor))
+            cy = int(round(72 * factor))
             av = load_and_crop_circular_avatar(avatar_path, dia)
             card.alpha_composite(av, (cx - dia // 2, cy - dia // 2))
         except Exception as e:
             logger.warning(f"Failed to composite avatar in Large1: {e}")
 
-    # Mask original author and comment text
-    mask_x1 = 120
+    # Mask original author and comment text (leave like / reply action icons unmasked)
+    mask_x1 = int(round(120 * factor))
     mask_y1 = int(16 * scale)
     mask_x2 = target_width - int(50 * scale)
-    mask_y2 = int(190 * scale)
+    mask_y2 = int(194 * scale)
     draw.rectangle([mask_x1, mask_y1, mask_x2, mask_y2], fill=bg_color)
 
-    font_author = _get_font(bold=True, size=28)
+    font_author = _get_font(bold=True, size=int(round(32 * factor)))
     draw.text((mask_x1, int(24 * scale)), author_name, font=font_author, fill=author_color)
     time_x = mask_x1 + int(draw.textlength(author_name, font=font_author)) + 16
-    draw.text((time_x, int(26 * scale)), f"{random.randint(1, 10)} days ago", font=_get_font(bold=False, size=22), fill=sub_color)
+    draw.text((time_x, int(26 * scale)), f"{random.randint(1, 10)} days ago", font=_get_font(bold=False, size=int(round(24 * factor))), fill=sub_color)
 
-    max_text_w = min(620, mask_x2 - mask_x1 - 10)
+    max_text_w = mask_x2 - mask_x1 - 10
     max_text_h = mask_y2 - int(66 * scale) - 6
     _draw_fitted_comment_text(
         draw, comment_text,
@@ -521,11 +504,11 @@ def _render_large_template(
         y=int(66 * scale),
         max_w=max_text_w,
         max_h=max_text_h,
-        initial_font_size=32,
+        initial_font_size=38,
         text_color=text_color,
         line_spacing=8,
         max_lines=3,
-        min_font_size=24
+        min_font_size=30
     )
 
     return card
@@ -535,7 +518,7 @@ def generate_outro_comment_cards(
     comments: List[Dict[str, any]],
     is_landscape: bool = False,
     output_dir: Optional[Path] = None,
-    target_width: int = 860,
+    target_width: int = 960,
     max_height_budget: Optional[int] = None
 ) -> List[Path]:
     """

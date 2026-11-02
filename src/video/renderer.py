@@ -160,13 +160,7 @@ def _get_video_dimensions(path: Path) -> Tuple[int, int]:
 
 
 def _has_audio(path: Path) -> bool:
-    """
-    Check if the video/audio file contains an audible audio stream.
-    
-    1. Checks if an audio stream exists using ffprobe.
-    2. If an audio stream exists, runs a fast volumedetect scan using ffmpeg to verify
-       that it contains actual audible sound and is not completely silent (-91 dB / <= -45 dB).
-    """
+    """Check if the video file contains an audio stream using ffprobe."""
     cmd = [
         "ffprobe", "-v", "error",
         "-select_streams", "a",
@@ -176,48 +170,9 @@ def _has_audio(path: Path) -> bool:
     ]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=FFPROBE_TIMEOUT)
-        if "audio" not in r.stdout.lower():
-            return False
-    except Exception as e:
-        logger.warning(f"Error checking audio stream existence with ffprobe: {e}")
+        return "audio" in r.stdout.lower()
+    except Exception:
         return False
-
-    # Audible volume check: detects if audio stream is silent (e.g. max_volume <= -45 dB)
-    null_dev = "NUL" if os.name == "nt" else "/dev/null"
-    cmd_vol = [
-        "ffmpeg", "-v", "info",
-        "-vn", "-sn", "-dn",
-        "-i", str(path),
-        "-t", "15",
-        "-af", "volumedetect",
-        "-f", "null", null_dev
-    ]
-    try:
-        r_vol = subprocess.run(cmd_vol, capture_output=True, text=True, timeout=10)
-        stderr = r_vol.stderr or ""
-        max_match = re.search(r"max_volume:\s*(-?[\d\.]+)\s*dB", stderr)
-        mean_match = re.search(r"mean_volume:\s*(-?[\d\.]+)\s*dB", stderr)
-        
-        if max_match:
-            max_db = float(max_match.group(1))
-            if max_db <= -45.0:
-                logger.info(
-                    f"Video '{path.name}' has audio stream, but it is silent "
-                    f"(max_volume={max_db:.1f} dB <= -45.0 dB). Treating as no sound."
-                )
-                return False
-        if mean_match:
-            mean_db = float(mean_match.group(1))
-            if mean_db <= -55.0:
-                logger.info(
-                    f"Video '{path.name}' has audio stream, but it is silent "
-                    f"(mean_volume={mean_db:.1f} dB <= -55.0 dB). Treating as no sound."
-                )
-                return False
-        return True
-    except Exception as e:
-        logger.warning(f"Error checking audio volume with ffmpeg volumedetect: {e}. Defaulting to True.")
-        return True
 
 
 def _get_fallback_meme_audio() -> Optional[Path]:
@@ -226,20 +181,9 @@ def _get_fallback_meme_audio() -> Optional[Path]:
     search_dirs = [
         assets_dir,
         assets_dir / "cat_reactions",
-        assets_dir / "Comments",
         config.ROOT / "data" / "assets",
         config.ROOT / "data" / "assets" / "cat_reactions",
-        config.ROOT / "data" / "assets" / "Comments",
-        config.ROOT,
     ]
-    # Check exact filename first
-    for d in search_dirs:
-        if not d.exists():
-            continue
-        exact = d / "Ocean meme audio.mpeg"
-        if exact.exists():
-            return exact
-    # Case-insensitive / extension-flexible search
     for d in search_dirs:
         if not d.exists():
             continue
@@ -650,28 +594,14 @@ def render_short(
     )
     
     audio_map_tag = "[delayed_audio]"
-    if is_meme_video and overlay_card_path and overlay_card_path.exists():
-        if _has_audio(overlay_card_path):
-            filter_chains.append(
-                "[2:a]volume=0.15[meme_a]"
-            )
-            filter_chains.append(
-                "[delayed_audio][meme_a]amix=inputs=2:duration=longest:dropout_transition=0,volume=1.5[mixed_audio]"
-            )
-            audio_map_tag = "[mixed_audio]"
-        else:
-            fallback_audio_path = _get_fallback_meme_audio()
-            if fallback_audio_path and fallback_audio_path.exists():
-                fallback_in_idx = len(inputs)
-                inputs.extend(["-stream_loop", "-1", "-i", str(fallback_audio_path)])
-                filter_chains.append(
-                    f"[{fallback_in_idx}:a]volume=0.15[meme_a]"
-                )
-                filter_chains.append(
-                    "[delayed_audio][meme_a]amix=inputs=2:duration=longest:dropout_transition=0,volume=1.5[mixed_audio]"
-                )
-                audio_map_tag = "[mixed_audio]"
-                logger.info(f"Standard short: Meme video has no sound. Using fallback audio '{fallback_audio_path.name}' at volume 0.15")
+    if is_meme_video and overlay_card_path and overlay_card_path.exists() and _has_audio(overlay_card_path):
+        filter_chains.append(
+            "[2:a]volume=0.15[meme_a]"
+        )
+        filter_chains.append(
+            "[delayed_audio][meme_a]amix=inputs=2:duration=longest:dropout_transition=0,volume=1.5[mixed_audio]"
+        )
+        audio_map_tag = "[mixed_audio]"
         
     filter_complex_str = ";".join(filter_chains)
     
@@ -724,8 +654,7 @@ def render_curator_short(
     title: str = "",
     branding_text: str = "",
     add_intro_outro: bool = True,
-    subreddit: str = "",
-    comment_cards: List[Path] | None = None
+    subreddit: str = ""
 ) -> Path:
     """
     Renders a curator-style 9:16 vertical Short from a horizontal/square/portrait Reddit meme video.
@@ -751,21 +680,9 @@ def render_curator_short(
         
     meme_ar = mw / mh
     
-    # Target duration calculation (supports outro comments freeze frame)
-    use_outro_comments = bool(comment_cards and getattr(config, "ENABLE_OUTRO_COMMENTS", True))
-    outro_dur = getattr(config, "OUTRO_COMMENTS_DURATION", 3.8) if use_outro_comments else 0.0
-
-    if use_outro_comments and outro_dur > 0:
-        # Guarantee enough outro time: if meme + outro > 59.0s, trim meme so total short <= 59.0s
-        if meme_dur + outro_dur > 59.0:
-            meme_dur = max(5.0, 59.0 - outro_dur)
-        render_duration = meme_dur + outro_dur
-        pad_freeze_dur = outro_dur
-    else:
-        render_duration = min(59.0, meme_dur)
-        pad_freeze_dur = 0.0
-
-    logger.info(f"Rendering Curator Short: duration={render_duration:.2f}s (meme={meme_dur:.2f}s, outro={outro_dur:.2f}s) | aspect_ratio={meme_ar:.2f}")
+    # Target duration (maximum of 59s)
+    render_duration = min(59.0, meme_dur)
+    logger.info(f"Rendering Curator Short: duration={render_duration:.2f}s | aspect_ratio={meme_ar:.2f}")
     
     # 2. Build inputs
     if is_image:
@@ -777,18 +694,6 @@ def render_curator_short(
     header_input_idx = None
     header_h = 246
     current_idx = 1
-
-    comment_inputs = []
-    if use_outro_comments and comment_cards:
-        max_cards_count = getattr(config, "OUTRO_COMMENTS_COUNT", 2)
-        for cp in comment_cards[:max_cards_count]:
-            if cp and Path(cp).exists():
-                from PIL import Image
-                _, ch = Image.open(cp).size
-                c_idx = current_idx
-                inputs.extend(["-loop", "1", "-i", str(cp)])
-                current_idx += 1
-                comment_inputs.append((c_idx, ch))
 
     if title and getattr(config, "CAPTION_ON_TOP", True):
         from src.video.overlay import generate_creator_header_card
@@ -825,18 +730,17 @@ def render_curator_short(
     # Maximum allowed height for the video to leave room for the creator header card and margins
     max_fg_h = make_even(1920 - 100 - 120 - header_h - gap)
     
-    tpad_filter = f",tpad=stop_mode=clone:stop_duration={pad_freeze_dur:.2f}" if pad_freeze_dur > 0 else ""
     if natural_h > max_fg_h:
         # Tall portrait video: keep full 1080 width, crop excess height from vertical center
         fg_h = max_fg_h
         filter_chains.append(
-            f"[0:v]setpts=PTS-STARTPTS{tpad_filter},scale=1080:-2:flags=lanczos,crop=1080:{fg_h}:0:(ih-{fg_h})/2[fg_scaled]"
+            f"[0:v]setpts=PTS-STARTPTS,scale=1080:-2:flags=lanczos,crop=1080:{fg_h}:0:(ih-{fg_h})/2[fg_scaled]"
         )
     else:
         # Landscape, square, or standard height: scale directly to 1080 width
         fg_h = natural_h
         filter_chains.append(
-            f"[0:v]setpts=PTS-STARTPTS{tpad_filter},scale=1080:{fg_h}:flags=lanczos[fg_scaled]"
+            f"[0:v]setpts=PTS-STARTPTS,scale=1080:{fg_h}:flags=lanczos[fg_scaled]"
         )
         
     # Vertical Centering of [Header Card + Video]
@@ -862,40 +766,6 @@ def render_curator_short(
         f"[{last_v_tag}][fg_scaled]overlay=x=0:y={video_y}:shortest=1[v_layout]"
     )
     last_v_tag = "v_layout"
-
-    # Overlay Top Reddit Comments Outro Popups (staggered appearance)
-    comment_pop_events = []
-    if comment_inputs:
-        num_cards = len(comment_inputs)
-        gap_between_cards = 24
-        total_cards_h = sum(ch for _, ch in comment_inputs) + (num_cards - 1) * gap_between_cards
-        
-        is_landscape = (meme_ar > 1.0)
-        # Position cards block safely without obstructing channel & title banner or video borders
-        if is_landscape:
-            # Strictly center inside the landscape video borders
-            cards_start_y = video_y + max(16, (fg_h - total_cards_h) // 2)
-        else:
-            # Portrait: place in upper-middle of video below header card (matching reference layout)
-            top_bound = max(header_y + header_h + 45, video_y + 30)
-            ideal_center = video_y + max(30, (fg_h - total_cards_h) // 3)
-            cards_start_y = max(top_bound, min(ideal_center, 1580 - total_cards_h))
-
-        cur_card_y = cards_start_y
-        t_base = max(0.5, render_duration - outro_dur)
-        stagger_step = 1.2 if num_cards == 2 else (outro_dur / max(1, num_cards))
-
-        for c_i, (c_idx, ch) in enumerate(comment_inputs):
-            t_start = t_base + (c_i * stagger_step)
-            comment_pop_events.append(t_start)
-            filter_chains.append(
-                f"[{c_idx}:v]setpts=PTS-STARTPTS[c_stream_{c_i}]"
-            )
-            filter_chains.append(
-                f"[{last_v_tag}][c_stream_{c_i}]overlay=x=(W-w)/2:y={cur_card_y}:enable='gte(t,{t_start:.2f})':shortest=0[v_c_{c_i}]"
-            )
-            last_v_tag = f"v_c_{c_i}"
-            cur_card_y += ch + gap_between_cards
         
     # D. Add Branding Overlay
     if branding_text:
@@ -927,49 +797,22 @@ def render_curator_short(
         )
         last_v_tag = "v_final"
         
-    # F. Pop Sound Effect for Comment Popups ("pop.mp3.mpeg" in comments directory)
-    comments_dir = getattr(config, "OUTRO_COMMENTS_DIR", config.ROOT / "data" / "assets" / "Comments")
-    pop_audio_path = comments_dir / "pop.mp3.mpeg"
-    if not pop_audio_path.exists():
-        found_pops = list(comments_dir.rglob("pop*.*"))
-        if found_pops:
-            pop_audio_path = found_pops[0]
-
-    pop_audio_tags = []
-    if comment_pop_events and pop_audio_path and pop_audio_path.exists():
-        for p_i, t_event in enumerate(comment_pop_events):
-            pop_in_idx = current_idx
-            inputs.extend(["-i", str(pop_audio_path)])
-            current_idx += 1
-            delay_ms = int(round(t_event * 1000))
-            filter_chains.append(
-                f"[{pop_in_idx}:a]adelay={delay_ms}|{delay_ms},volume=1.0[pop_a_{p_i}]"
-            )
-            pop_audio_tags.append(f"pop_a_{p_i}")
-
-    # G. Audio Processing: Use original audio if present, or looping fallback audio if silent
+    # F. Audio Processing: Use original audio if present, or looping fallback audio if silent
     has_audio = _has_audio(meme_video_path)
     audio_map_args = []
     fallback_input_idx = None
-    main_audio_tag = None
 
     if has_audio:
-        apad_filter = f"apad=whole_dur={render_duration:.2f}" if pad_freeze_dur > 0 else ""
         if add_intro_outro:
             fade_dur = 0.5
             out_start = render_duration - fade_dur
-            prefix = f"{apad_filter}," if apad_filter else ""
             filter_chains.append(
-                f"[0:a]{prefix}afade=type=in:start_time=0:duration={fade_dur},"
-                f"afade=type=out:start_time={out_start:.2f}:duration={fade_dur}[a_main]"
+                f"[0:a]afade=type=in:start_time=0:duration={fade_dur},"
+                f"afade=type=out:start_time={out_start:.2f}:duration={fade_dur}[a_faded]"
             )
-            main_audio_tag = "a_main"
+            audio_map_args = ["-map", "[a_faded]"]
         else:
-            if apad_filter:
-                filter_chains.append(f"[0:a]{apad_filter}[a_main]")
-                main_audio_tag = "a_main"
-            else:
-                main_audio_tag = "0:a"
+            audio_map_args = ["-map", "0:a"]
     else:
         # Meme video has no audio. Fall back to "Ocean meme audio" in assets
         fallback_audio_path = _get_fallback_meme_audio()
@@ -987,33 +830,14 @@ def render_curator_short(
                 out_start = render_duration - fade_dur
                 filter_chains.append(
                     f"[{fallback_input_idx}:a]afade=type=in:start_time=0:duration={fade_dur},"
-                    f"afade=type=out:start_time={out_start:.2f}:duration={fade_dur}[a_main]"
+                    f"afade=type=out:start_time={out_start:.2f}:duration={fade_dur}[a_faded]"
                 )
-                main_audio_tag = "a_main"
+                audio_map_args = ["-map", "[a_faded]"]
             else:
-                filter_chains.append(
-                    f"[{fallback_input_idx}:a]volume=1.0[a_main]"
-                )
-                main_audio_tag = "a_main"
-        elif pop_audio_tags:
-            # Silent video, create silent base track to mix pop audio
-            silent_input_idx = current_idx
-            inputs.extend(["-f", "lavfi", "-i", f"anullsrc=channel_layout=stereo:sample_rate=48000:duration={render_duration:.2f}"])
-            current_idx += 1
-            main_audio_tag = f"{silent_input_idx}:a"
+                # Map audio stream (using :a:0 to avoid any attached album artwork)
+                audio_map_args = ["-map", f"{fallback_input_idx}:a:0"]
         else:
             logger.warning("Meme video has no audio, and fallback 'Ocean meme audio' was not found.")
-
-    # Mix pop sound effects into main audio if present
-    if pop_audio_tags and main_audio_tag:
-        all_audio_inputs = f"[{main_audio_tag}]" + "".join(f"[{pt}]" for pt in pop_audio_tags)
-        total_audio_count = 1 + len(pop_audio_tags)
-        filter_chains.append(
-            f"{all_audio_inputs}amix=inputs={total_audio_count}:duration=first:normalize=0[a_mixed]"
-        )
-        audio_map_args = ["-map", "[a_mixed]"]
-    elif main_audio_tag:
-        audio_map_args = ["-map", f"[{main_audio_tag}]" if ":" not in main_audio_tag else main_audio_tag]
 
     # 4. Build and execute complete FFmpeg command
     filter_complex_str = ";".join(filter_chains)
@@ -1023,7 +847,7 @@ def render_curator_short(
         "-filter_complex", filter_complex_str,
         "-map", f"[{last_v_tag}]"
     ])
-    if main_audio_tag is not None:
+    if has_audio or fallback_input_idx is not None:
         cmd.extend(audio_map_args)
         
     cmd.extend([
@@ -1034,7 +858,7 @@ def render_curator_short(
         "-profile:v", "high",
         "-level", "4.2"
     ])
-    if main_audio_tag is not None:
+    if has_audio or fallback_input_idx is not None:
         cmd.extend([
             "-c:a", "aac",
             "-b:a", "256k",

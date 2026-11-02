@@ -77,26 +77,7 @@ def run_test():
     curated_title = generate_curator_caption(selected_post.title, selected_post.subreddit)
     logger.info(f"Curated title generated: '{curated_title}' (original: '{selected_post.title}')")
 
-    # Prepare outro comment cards
-    from src.reddit.comments import fetch_top_short_comments
-    from src.video.comments_overlay import generate_outro_comment_cards
-    sample_comments = fetch_top_short_comments(
-        post_id=selected_post.id,
-        subreddit=selected_post.subreddit,
-        title=curated_title,
-        max_comments=2
-    )
-    from src.video.renderer import _get_video_dimensions
-    vw, vh = _get_video_dimensions(video_path)
-    is_landscape = (vw > vh) if (vw and vh) else False
-    comment_cards = generate_outro_comment_cards(
-        comments=sample_comments,
-        is_landscape=is_landscape,
-        max_height_budget=520 if is_landscape else 950
-    )
-    logger.info(f"Generated {len(comment_cards)} comment cards for test render.")
-
-    logger.info("Rendering curator Short with outro comments popups...")
+    logger.info("Rendering curator Short...")
     try:
         render_curator_short(
             meme_video_path=video_path,
@@ -104,8 +85,7 @@ def run_test():
             title=curated_title,
             branding_text="",
             add_intro_outro=False,
-            subreddit=selected_post.subreddit,
-            comment_cards=comment_cards
+            subreddit=selected_post.subreddit
         )
         if output_video.exists():
             size_mb = output_video.stat().st_size / (1024 * 1024)

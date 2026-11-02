@@ -262,10 +262,4 @@ CHANNEL_DISPLAY_NAME = _env("CHANNEL_DISPLAY_NAME", "Diet Joke")
 CHANNEL_HANDLE = _env("CHANNEL_HANDLE", "@DietJoke")
 BADGE_COLOR = _env("BADGE_COLOR", "#FB0101")  # Red verified tick circle
 BACKGROUND_COLOR = _env("BACKGROUND_COLOR", "#FFFFFF")  # Pure white background
-FIT_CLIP_WIDTH = _env_bool("FIT_CLIP_WIDTH", True)
-
-# ── Outro Comments Settings ──────────────────────────────────────────
-ENABLE_OUTRO_COMMENTS = _env_bool("ENABLE_OUTRO_COMMENTS", True)
-OUTRO_COMMENTS_DIR = ROOT / _env("OUTRO_COMMENTS_DIR", f"{DATA_DIR_NAME}/assets/Comments")
-OUTRO_COMMENTS_COUNT = int(_env("OUTRO_COMMENTS_COUNT", "2"))
-OUTRO_COMMENTS_DURATION = float(_env("OUTRO_COMMENTS_DURATION", "3.8"))
+FIT_CLIP_WIDTH = _env_bool("FIT_CLIP_WIDTH", True)

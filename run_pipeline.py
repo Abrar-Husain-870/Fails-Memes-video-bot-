@@ -342,32 +342,6 @@ def main() -> None:
             log_stage_start("Video Rendering")
             video_path = config.OUTPUT_DIR / "final_short.mp4"
             from src.video.renderer import render_curator_short
-            
-            # Prepare Outro Top Reddit Comments Pop-up Cards
-            comment_cards = []
-            if getattr(config, "ENABLE_OUTRO_COMMENTS", True):
-                try:
-                    from src.reddit.comments import fetch_top_short_comments
-                    from src.video.comments_overlay import generate_outro_comment_cards
-                    top_comments = fetch_top_short_comments(
-                        post_id=post.id,
-                        subreddit=post.subreddit,
-                        title=post.title,
-                        max_comments=getattr(config, "OUTRO_COMMENTS_COUNT", 3)
-                    )
-                    if top_comments:
-                        from src.video.renderer import _get_video_dimensions
-                        vw, vh = _get_video_dimensions(meme_video_path)
-                        is_landscape = (vw > vh) if (vw and vh) else False
-                        max_budget = 520 if is_landscape else 950
-                        comment_cards = generate_outro_comment_cards(
-                            comments=top_comments,
-                            is_landscape=is_landscape,
-                            max_height_budget=max_budget
-                        )
-                except Exception as e:
-                    logger.warning(f"Could not prepare outro comment cards: {e}")
-
             try:
                 render_curator_short(
                     meme_video_path=meme_video_path,
@@ -375,13 +349,17 @@ def main() -> None:
                     title=caption_title or post.title,
                     branding_text=config.BRANDING_TEXT,
                     add_intro_outro=config.ADD_INTRO_OUTRO,
-                    subreddit=post.subreddit,
-                    comment_cards=comment_cards
+                    subreddit=post.subreddit
                 )
-                log_stage_finish("Video Rendering", {"output_video": str(video_path), "comments_cards": len(comment_cards)})
+                log_stage_finish("Video Rendering", {"output_video": str(video_path)})
             except Exception as e:
                 log_stage_error("Video Rendering", e, fatal=True)
                 sys.exit(1)
+
+            # ── Step 7: Update Databases ─────────────────────────
+            log_stage_start("Database Update")
+            save_processed_id(post.id, post.subreddit)
+            log_stage_finish("Database Update")
         else:
             # ── Step 3: Background / Cat Clip Selection ──────────
             log_stage_start("Background Selection")
@@ -446,9 +424,12 @@ def main() -> None:
                 log_stage_error("Video Rendering", e, fatal=True)
                 sys.exit(1)
 
-            # ── Step 7: Background Clip Usage Update ─────────────
+            # ── Step 7: Update Databases ─────────────────────────
+            log_stage_start("Database Update")
+            save_processed_id(post.id, post.subreddit)
             if not is_cat_clip:
                 increment_background_usage(bg_clip.name)
+            log_stage_finish("Database Update")
 
         # ── Step 8: Upload YouTube Shorts ────────────────────
         video_id = ""
@@ -489,12 +470,8 @@ def main() -> None:
 
                 if video_id:
                     log_stage_finish("YouTube Upload", {"video_id": video_id})
-                    # Strictly mark post as processed ONLY after confirmed upload success
-                    save_processed_id(post.id, post.subreddit)
-                    logger.info(f"✔ Post {post.id} successfully recorded in history database after confirmed YouTube publish.")
                 else:
                     log_stage_error("YouTube Upload", "Upload failed", fatal=True)
-                    logger.warning(f"❌ Post {post.id} upload failed; NOT saved to history database so it can be retried in future runs.")
                     sys.exit(1)
         else:
             log_stage_start("YouTube Upload")

@@ -1,120 +1,411 @@
-# Reddit to YouTube Shorts / Reels Automation System
+# 🎬 Reddit to YouTube Shorts / Reels Automation System
 
-A fully automated, modular Python pipeline that crawls posts from subreddits or RSS feeds, performs multi-phase content safety moderation, and renders high-quality 9:16 vertical Shorts at 60 FPS. The system is designed to work out-of-the-box for both local development and autonomous AI agents (like Antigravity, Cursor, or Claude) to build on top of.
+A fully autonomous, production-grade Python automation pipeline that curates high-performing video clips from Reddit (`r/Whatcouldgowrong`, `r/Unexpected`, `r/AccidentalSlapStick`, etc.), renders viral 9:16 vertical Shorts at 60 FPS with sleek Twitter/X-style creator header cards, and publishes them to YouTube on an automated schedule.
+
+Built to run seamlessly **locally** or **100% free 24/7 in the cloud** using GitHub Actions.
+
+---
+
+## 📑 Table of Contents
+
+- [Overview & Visual Style](#-overview--visual-style)
+- [Key Features](#-key-features)
+- [Prerequisites](#-prerequisites)
+- [Quickstart: Local Setup](#-quickstart-local-setup)
+- [Customization Guide: Adapting to Your Channel](#-customization-guide-adapting-to-your-channel)
+- [Credentials & API Keys Setup](#-credentials--api-keys-setup)
+  - [1. Groq API (Required for AI Captions)](#1-groq-api-free--required-for-ai-captions)
+  - [2. YouTube Data API v3 (Required for Uploading)](#2-youtube-data-api-v3-required-for-uploading)
+  - [3. Reddit Ingestion (Optional / Zero-Credential by Default)](#3-reddit-ingestion-optional--credential-free-by-default)
+  - [4. Gemini API (Optional Safety & Watermark Filter)](#4-gemini-api-optional-multimodal-safety)
+- [Testing & Verification](#-testing--verification)
+- [Running the Pipeline](#-running-the-pipeline)
+  - [CLI Flags & Options](#cli-flags--options)
+- [Automated Cloud Deployment (GitHub Actions)](#-automated-cloud-deployment-github-actions)
+- [Project Directory Structure](#-project-directory-structure)
+- [Configuration Reference (.env Cheatsheet)](#-configuration-reference-env-cheatsheet)
+- [Troubleshooting & FAQ](#-troubleshooting--faq)
+
+---
+
+## 🎨 Overview & Visual Style
+
+By default, the pipeline operates in **Curator Mode** (`CURATOR_MODE=True`), designed after top viral Short & Reel creators:
+
+```
+┌───────────────────────────────────────────────┐
+│               1080 x 1920 (9:16)              │
+│            PURE WHITE BACKGROUND CANVAS       │
+│                                               │
+│   ┌───────────────────────────────────────┐   │
+│   │ [Avatar] Channel Name [✓ Verified]    │   │  <-- Dynamic Twitter/X-style
+│   │          @ChannelHandle               │   │      Creator Header Card
+│   │                                       │   │
+│   │ "Bro really thought gravity was an   │   │  <-- AI-Generated Viral Hook
+│   │  optional setting 😂"                 │   │      with native emoji support
+│   └───────────────────────────────────────┘   │
+│                                               │
+│   ┌───────────────────────────────────────┐   │
+│   │                                       │   │
+│   │                                       │   │  <-- Original Reddit Video
+│   │         ORIGINAL VIDEO MEME           │   │      (Scaled 1080px edge-to-edge,
+│   │                                       │   │       original audio preserved)
+│   │                                       │   │
+│   └───────────────────────────────────────┘   │
+│                                               │
+│                                               │
+└───────────────────────────────────────────────┘
+```
+
+* **Zero-Voiceover Authenticity**: Preserves the original video's authentic audio instead of artificial AI narration.
+* **Edge-to-Edge Video Framing**: Clips automatically scale to 1080px full width with centered vertical framing on a clean canvas.
+* **Dynamic Header Card**: Pre-rendered via Pillow with high-resolution circular avatar masking, custom verified badge, and multi-line emoji-aware typography.
 
 ---
 
 ## 🚀 Key Features
 
-* **Dual Operational Modes**:
-  * **Curator Mode (Default)**: Automatically curates video memes from Reddit, letterboxes/pads them with blurred backgrounds, applies subtle branding overlays and smooth fade transitions, and publishes them keeping the original video's audio.
-  * **Normal (Commentary) Mode**: Generates AI scripts, synthesizes voiceovers, overlays PIL-rendered dark mode Reddit post cards on top of gameplay backgrounds, and burns bouncy, word-highlighting captions (ASS subtitles).
-* **Robust Ingestion Chain (Credential-Free Fallback)**:
-  * Prioritizes **Reddit PRAW API** if credentials are set.
-  * Falls back to rotated **Redlib proxy instances** and **Anonymous JSON Feeds** to bypass 403 rate-limits and GitHub Actions/CI IP blocks.
-  * Supports credential-free **RSS Ingestion** (from RSS.app or direct subreddit feeds) to fetch media links.
-* **4-Stage Content Safety Gatekeeper**:
-  * **Stage 1 (Ingestion)**: Local regex filter (14 prohibited categories) + LLM context evaluation + appeal/relatability suitability score + watermark detector + female presence rejection.
-  * **Stage 2 (Scripting)**: Scans generated narrative text, titles, descriptions, and tags.
-  * **Stage 3 (Pre-Rendering)**: Final validation check before executing FFmpeg.
-  * **Stage 4 (Pre-Upload)**: Final validation before transmitting to YouTube's publishing API.
-* **Greenscreen & Reaction Layering**:
-  * Extract and key out greenscreen reaction elements (`chromakey` filtering on-the-fly) and lay them over the main content zone adaptively to prevent overlap.
-* **Automated YouTube Distribution**:
-  * OAuth2 authorization helper and chunked resumable upload script.
-  * Scheduler parser that automatically restricts publishing to pre-defined daily slots (e.g. 4 times a day) based on history logs.
+* **Curator Mode (Default)**: Automatically curates funny fails and unexpected video clips, pairs them with punchy viral captions generated by Groq LLM, and packages them into clean 9:16 60 FPS vertical video.
+* **Commentary / Brainrot Mode (Alternative)**: AI narrative scripts, Edge TTS / ElevenLabs voiceover, PIL-rendered dark mode Reddit post card, bouncy ASS subtitles, and background gameplay footage (Minecraft/Subway Surfers).
+* **Zero-Credential Ingestion**: Uses `yt-dlp` combined with `curl-cffi` browser impersonation and anonymous Reddit JSON feeds. Bypasses 403 Forbidden rate limits without needing Reddit API developer credentials.
+* **4-Stage Safety Guard**:
+  1. *Ingestion*: Filters NSFW, pinned posts, prohibited keywords, low-score submissions, and duplicate IDs.
+  2. *Scripting*: Validates generated titles, hooks, and descriptions.
+  3. *Pre-Rendering*: Sanity check on audio/video duration and dimensions.
+  4. *Pre-Upload*: Final metadata and risk verification before transmitting to YouTube.
+* **Resumable YouTube OAuth2 Publishing**: Seamless chunked resumable upload script with automatic categorization, tags, and disclaimer inclusion.
+* **Smart Scheduler & De-duplication**:
+  * Prevents duplicate video uploads via `data/database/processed_reddit_posts.json`.
+  * Enforces daily video limits (`MAX_VIDEOS_PER_DAY=4`) and designated upload hours.
+  * Rotates subreddits to prevent repetitive content.
 
 ---
 
-## 🛠 Setup & Installation
+## 💻 Prerequisites
 
-### Prerequisites
-* **Python 3.12 or 3.13**
-* **FFmpeg** (installed and added to your system's PATH)
+Before running the project, ensure you have the following installed on your machine:
 
-### Installation
-1. Clone the repository:
-   ```bash
-   git clone <repo-url>
-   cd Reddit-Memes-Automation-for-YT-Shorts
-   ```
-2. Initialize virtual environment:
-   ```bash
-   python -m venv .venv
-   # Windows:
-   .venv\Scripts\activate
-   # Linux/macOS:
-   source .venv/bin/activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+1. **Python 3.11, 3.12, or 3.13**
+2. **FFmpeg & FFprobe**: Required for video slicing, resizing, and rendering.
+   * **Windows**: Download from [gyan.dev/ffmpeg](https://www.gyan.dev/ffmpeg/builds/) or install via `winget install Gyan.FFmpeg` / `choco install ffmpeg`. Ensure `ffmpeg` and `ffprobe` are in your system PATH.
+   * **Ubuntu / Debian**: `sudo apt update && sudo apt install -y ffmpeg fonts-liberation`
+   * **macOS**: `brew install ffmpeg`
 
----
-
-## ⚙️ Configuration
-
-Copy `.env.example` to `.env` and fill in your keys and preferences:
+Verify your FFmpeg installation:
 ```bash
+ffmpeg -version
+ffprobe -version
+```
+
+---
+
+## ⚡ Quickstart: Local Setup
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/Abrar-Husain-870/Fails-Memes-video-bot-.git
+cd Reddit_Video_Memes_YT_Automation
+```
+
+### 2. Create a Virtual Environment
+```bash
+# Windows (PowerShell / Command Prompt):
+python -m venv .venv
+.venv\Scripts\activate
+
+# Linux / macOS:
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 3. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Create Your Environment Configuration
+Copy `.env.example` into `.env`:
+```bash
+# Windows:
+copy .env.example .env
+
+# Linux / macOS:
 cp .env.example .env
 ```
 
-### Key Config Options
-| Variable | Default / Example | Description |
-|---|---|---|
-| `CURATOR_MODE` | `True` | `True` to compile video memes directly; `False` for AI commentary mode |
-| `SUBREDDITS` | `memes, dankmemes, me_irl` | Comma-separated target subreddits |
-| `RSS_ENABLED` | `False` | Enable fallback/credential-free RSS crawling |
-| `GEMINI_API_KEY` | `""` | Required for LLM Safety checks and Watermark Rejection |
-| `ENABLE_CONTENT_SAFETY` | `True` | Run the 4-stage safety evaluation pipeline |
-| `SAFETY_MODE` | `strict` | Content safety mode (`strict`, `standard`, `lenient`) |
-| `REJECT_FEMALE_HUMANS`| `True` | Rejects videos containing female human presence |
-| `YT_REFRESH_TOKEN` | `""` | YouTube OAuth2 refresh token for publishing |
-| `MAX_VIDEOS_PER_DAY` | `4` | Limit on daily published videos |
+---
+
+## 🎨 Customization Guide: Adapting to Your Channel
+
+If someone clones this repository, they can get the **exact same video style and app behavior** simply by updating the branding and credential variables in their `.env` file:
+
+```dotenv
+# ── YOUR CHANNEL BRANDING ───────────────────────────────────────────────────
+# 1. Place your square or circular channel profile picture in data/assets/
+PROFILE_PICTURE_PATH="data/assets/my_channel_logo.jpg"
+
+# 2. Your Channel's Display Name and Handle (used in the Twitter/X header card)
+CHANNEL_DISPLAY_NAME="Your Channel Name"
+CHANNEL_HANDLE="@YourChannelHandle"
+
+# 3. Verified Badge Color & Background Canvas
+BADGE_COLOR="#FB0101"        # Hex color: #FB0101 (Red), #1DA1F2 (Twitter Blue), etc.
+BACKGROUND_COLOR="#FFFFFF"   # Canvas background: #FFFFFF (White) or #000000 (Dark)
+
+# ── TARGET SUBREDDITS ────────────────────────────────────────────────────────
+# Comma-separated subreddits to curate viral clips from
+SUBREDDITS=Whatcouldgowrong, Unexpected, AccidentalSlapStick
+
+# ── VIDEO DURATION CONSTRAINTS ──────────────────────────────────────────────
+MAX_MEME_DURATION=59         # Max length in seconds for YouTube Shorts compliance
+MIN_MEME_DURATION=3          # Min length in seconds to avoid micro-clips
+```
+
+Everything else — the edge-to-edge video scaling, header card layout, AI hook rewriting, scheduler, and YouTube uploader — will work identically out of the box!
 
 ---
 
-## 🎮 Usage
+## 🔑 Credentials & API Keys Setup
 
-### Run End-to-End Pipeline
-Execute the full pipeline orchestrator with a single command:
+### 1. Groq API (Free & Required for AI Captions)
+The bot uses Groq to generate viral, witty one-line creator captions from Reddit post titles.
+1. Sign up for a free account at [console.groq.com](https://console.groq.com/).
+2. Create an API Key in the API Keys section.
+3. Paste it into your `.env`:
+   ```dotenv
+   LLM_PROVIDER=groq
+   GROQ_API_KEY=gsk_your_groq_api_key_here
+   LLM_MODEL="qwen/qwen3.8-27b"
+   ```
+
+---
+
+### 2. YouTube Data API v3 (Required for Uploading)
+
+To upload videos automatically to your YouTube channel:
+
+#### Step A: Create Google Cloud OAuth Credentials
+1. Open the [Google Cloud Console](https://console.cloud.google.com/).
+2. Create a new project (e.g., `YT-Shorts-Bot`).
+3. In the sidebar, go to **APIs & Services** > **Library**, search for **YouTube Data API v3**, and click **Enable**.
+4. Go to **APIs & Services** > **OAuth consent screen**:
+   * Choose **External** and click **Create**.
+   * Enter an App name, User support email, and Developer contact email.
+   * Under **Test Users**, click **+ Add Users** and enter the Google account email of your YouTube channel.
+5. Go to **APIs & Services** > **Credentials**:
+   * Click **+ Create Credentials** > **OAuth client ID**.
+   * Application type: **Desktop app**.
+   * Name: `Shorts Uploader`.
+   * Click **Create**.
+6. Copy your **Client ID** and **Client Secret** into your `.env`:
+   ```dotenv
+   YT_CLIENT_ID=your_client_id.apps.googleusercontent.com
+   YT_CLIENT_SECRET_VALUE=your_client_secret
+   ```
+
+#### Step B: Generate the Refresh Token
+Run the included helper script:
+```bash
+python get_refresh_token.py
+```
+* A browser window will open asking you to sign in with your Google account.
+* Authorize the application permissions.
+* The script will capture the authorization code, output your `YT_REFRESH_TOKEN`, and write it directly into your `.env` file.
+
+---
+
+### 3. Reddit Ingestion (Optional / Credential-Free by Default)
+* By default, the bot uses `curl-cffi` and anonymous Reddit feeds, so **no Reddit API keys are needed**.
+* If you want higher rate-limits or wish to use PRAW directly, create a "script" app at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) and fill in:
+  ```dotenv
+  REDDIT_CLIENT_ID=your_reddit_client_id
+  REDDIT_CLIENT_SECRET=your_reddit_client_secret
+  REDDIT_USER_AGENT=WCGWBot/1.0
+  ```
+
+---
+
+### 4. Gemini API (Optional: Multimodal Safety)
+For advanced LLM content moderation and watermark detection:
+1. Obtain an API key from [Google AI Studio](https://aistudio.google.com/).
+2. Add to `.env`:
+   ```dotenv
+   GEMINI_API_KEY=your_gemini_api_key_here
+   ```
+
+---
+
+## 🧪 Testing & Verification
+
+Before running full automation or uploading to YouTube, run the local integration test to confirm FFmpeg, Pillow, fonts, and video rendering are operating smoothly:
+
+```bash
+python test_curator_mode.py
+```
+
+* This downloads a royalty-free sample MP4, validates video dimensions, generates a creator card header, and renders `data/output/test_curator_final.mp4`.
+* Open `data/output/test_curator_final.mp4` to inspect the generated layout and visual quality.
+
+---
+
+## 🎮 Running the Pipeline
+
+### 1. Test Dry Run (Render Locally, Skip Upload)
+Fetch a live video from Reddit, generate AI captions, and render the final Short locally without uploading to YouTube:
+```bash
+python run_pipeline.py --force --no-upload
+```
+Your rendered video will be saved at `data/output/final_short.mp4`.
+
+### 2. Full Live Execution (Render & Upload Immediately)
+Bypasses the daily scheduler check, ingests from Reddit, generates the Short, and uploads it directly to YouTube:
+```bash
+python run_pipeline.py --force
+```
+
+### 3. Scheduled Execution (Production Mode)
+Checks if the current system time matches one of your designated `UPLOAD_SCHEDULE_TIMES` (e.g. `09:00, 13:00, 17:00, 21:00`) and whether the daily upload limit (`MAX_VIDEOS_PER_DAY=4`) has been reached:
 ```bash
 python run_pipeline.py
 ```
 
-### Command Line Flags
-* **Bypass Scheduler**: Force run immediately regardless of scheduled hours:
+---
+
+### CLI Flags & Options
+
+| Flag | Description | Example |
+|---|---|---|
+| `--force` | Bypasses scheduler time-slot check and executes immediately. | `python run_pipeline.py --force` |
+| `--no-upload` | Renders video locally without uploading to YouTube. | `python run_pipeline.py --force --no-upload` |
+| `--subreddit <name>` | Overrides `.env` and fetches specifically from the specified subreddit. | `python run_pipeline.py --force --subreddit Unexpected` |
+| `--privacy <visibility>`| Sets YouTube video privacy (`public`, `unlisted`, `private`). | `python run_pipeline.py --force --privacy unlisted` |
+| `--style <preset>` | Sets caption styling for Commentary Mode (`chaotic`, `meme`, `story`, `npc`). | `python run_pipeline.py --style meme` |
+| `--skip-download` | Uses existing local clips instead of downloading new background videos. | `python run_pipeline.py --skip-download` |
+
+---
+
+## ☁️ Automated Cloud Deployment (GitHub Actions)
+
+This repository includes a fully configured GitHub Actions workflow (`.github/workflows/daily_brainrot.yml`) that automatically runs the bot 4 times a day on a free GitHub-hosted Ubuntu runner.
+
+### How to Enable GitHub Actions:
+1. Push your repository to GitHub (Private repository recommended).
+2. Go to your GitHub repository: **Settings** > **Secrets and variables** > **Actions** > **New repository secret**.
+3. Add the following secrets:
+   * `GROQ_API_KEY`
+   * `YT_CLIENT_ID`
+   * `YT_CLIENT_SECRET_VALUE`
+   * `YT_REFRESH_TOKEN`
+   * `GEMINI_API_KEY` *(Optional)*
+   * `REDDIT_CLIENT_ID` *(Optional)*
+   * `REDDIT_CLIENT_SECRET` *(Optional)*
+4. **Grant Write Permissions for Database Persistence**:
+   * Navigate to **Settings** > **Actions** > **General**.
+   * Under **Workflow permissions**, select **Read and write permissions**.
+   * Click **Save**.
+   *(This allows the GitHub runner to commit `data/database/*.json` back to your repo so duplicate posts are never reused).*
+5. You can trigger a run manually anytime from the **Actions** tab using the **Run workflow** button!
+
+---
+
+## 📂 Project Directory Structure
+
+```text
+Reddit_Video_Memes_YT_Automation/
+├── .github/
+│   └── workflows/
+│       └── daily_brainrot.yml        # 4x/day scheduled GitHub Actions runner
+├── data/
+│   ├── assets/                       # Channel profile pics, reaction clips, sound effects
+│   │   ├── Diet Joke.jpg             # Default channel avatar
+│   │   └── cat_reactions/            # Optional reaction overlays
+│   ├── database/                     # De-duplication and history tracking
+│   │   ├── processed_reddit_posts.json
+│   │   ├── subreddit_history.json
+│   │   └── upload_history.json
+│   ├── output/                       # Destination for final rendered MP4s
+│   ├── raw/                          # Downloaded temporary video memes
+│   └── clips/                        # Downloaded background clips (commentary mode)
+├── src/
+│   ├── logger.py                     # Unified console & file logging
+│   ├── narration/                    # LLM caption & commentary generation (Groq/Gemini/OpenAI)
+│   ├── reddit/                       # Reddit crawling, Redlib, RSS, & video downloader
+│   ├── safety/                       # Multi-stage content moderation & watermark scanner
+│   ├── upload/                       # YouTube Data API v3 resumable uploader & scheduler
+│   ├── video/                        # FFmpeg rendering engine & Twitter/X card generator
+│   └── voice/                        # Text-To-Speech engine (Edge-TTS, ElevenLabs)
+├── .env.example                      # Template for all environment variables
+├── config.py                         # Centralized configuration reader
+├── get_refresh_token.py              # CLI OAuth2 helper to generate YouTube refresh token
+├── requirements.txt                  # Python dependencies
+├── run_pipeline.py                   # Master pipeline orchestrator
+└── test_curator_mode.py              # Integration test for video rendering
+```
+
+---
+
+## ⚙️ Configuration Reference (.env Cheatsheet)
+
+| Variable | Default in `.env.example` | Description |
+|---|---|---|
+| `CURATOR_MODE` | `True` | `True` for direct video curation; `False` for AI commentary mode |
+| `SUBREDDITS` | `Whatcouldgowrong, Unexpected, AccidentalSlapStick` | Target subreddits for content ingestion |
+| `MAX_MEME_DURATION` | `59` | Max allowed video length in seconds |
+| `MIN_MEME_DURATION` | `3` | Min allowed video length in seconds |
+| `PROFILE_PICTURE_PATH`| `"data/assets/Diet Joke.jpg"` | Path to your channel avatar image |
+| `CHANNEL_DISPLAY_NAME`| `"Diet Joke"` | Display name shown on Creator Header Card |
+| `CHANNEL_HANDLE` | `"@DietJoke"` | Handle shown below display name |
+| `BADGE_COLOR` | `"#FB0101"` | Hex color of the verified checkmark circle |
+| `BACKGROUND_COLOR` | `"#FFFFFF"` | Hex color of vertical background canvas |
+| `LLM_PROVIDER` | `groq` | AI provider for caption rewriting (`groq`, `gemini`, `openai`) |
+| `GROQ_API_KEY` | `""` | API key from console.groq.com |
+| `LLM_MODEL` | `"qwen/qwen3.8-27b"` | Model ID for AI caption generation |
+| `ENABLE_CONTENT_SAFETY`| `True` | Activates multi-stage moderation filter |
+| `SAFETY_MODE` | `standard` | Safety sensitivity (`strict`, `standard`, `lenient`) |
+| `YT_CLIENT_ID` | `""` | Google Cloud OAuth Client ID |
+| `YT_CLIENT_SECRET_VALUE`| `""`| Google Cloud OAuth Client Secret |
+| `YT_REFRESH_TOKEN` | `""` | OAuth refresh token from `get_refresh_token.py` |
+| `YOUTUBE_PRIVACY` | `public` | Upload visibility (`public`, `unlisted`, `private`) |
+| `MAX_VIDEOS_PER_DAY` | `4` | Daily upload quota limit |
+| `UPLOAD_SCHEDULE_TIMES`| `09:00, 13:00, 17:00, 21:00` | Scheduled time windows |
+
+---
+
+## ❓ Troubleshooting & FAQ
+
+### 1. `FileNotFoundError: [WinError 2] The system cannot find the file specified: 'ffmpeg'`
+* FFmpeg is not installed or not in your system's PATH.
+* Open a new terminal and type `ffmpeg -version`. If it fails, install FFmpeg and add its `bin/` directory to your environment variables.
+
+### 2. `HTTP 403 Forbidden` when downloading Reddit videos
+* Reddit occasionally blocks datacenter IPs or strict user agents.
+* The codebase uses `curl-cffi` to mimic real browser TLS fingerprints. Ensure you have installed all requirements: `pip install curl-cffi`.
+
+### 3. YouTube Upload Token Expired (`invalid_grant` / `Token has been expired or revoked`)
+* If your Google Cloud project is in **Testing** status, refresh tokens automatically expire every 7 days.
+* To make your token permanent:
+  1. In Google Cloud Console, go to **APIs & Services** > **OAuth consent screen**.
+  2. Click **Publish App** to switch from "Testing" to "In Production". (Verification is **not** required for personal channel usage).
+  3. Re-run `python get_refresh_token.py` once to get a permanent token.
+
+### 4. `Pipeline run skipped by Scheduler (Not inside an active time slot)`
+* When running `python run_pipeline.py`, the scheduler checks if your current local time matches `UPLOAD_SCHEDULE_TIMES`.
+* Use the `--force` flag to run anytime:
   ```bash
   python run_pipeline.py --force
   ```
-* **Skip YouTube Upload**: Generate and render video locally without uploading:
-  ```bash
-  python run_pipeline.py --no-upload
-  ```
-* **Target a Subreddit**: Fetch only from a specific subreddit for this run:
-  ```bash
-  python run_pipeline.py --subreddit dankmemes
-  ```
-* **Style Captions (Normal Mode)**: Choose caption styling preset (`chaotic` [orange], `meme` [green], `story` [white], `npc` [purple]):
-  ```bash
-  python run_pipeline.py --style meme
-  ```
-* **Skip Background Download**: Use pre-existing local clips instead of fetching new ones:
-  ```bash
-  python run_pipeline.py --skip-download
-  ```
 
-### Verification & Testing
-To verify the Curator Mode video rendering engine locally, run the integration test script:
-```bash
-python test_curator_mode.py
-```
-This script downloads a sample video from GitHub, passes it through ingestion filters, and renders `test_curator_final.mp4` under `data_video_bot/output/`.
+### 5. Font rendering issues on Linux / Ubuntu
+* Linux distributions may lack Microsoft fonts like Arial or Segoe UI.
+* Install liberation fonts:
+  ```bash
+  sudo apt-get install -y fonts-liberation fonts-dejavu-core
+  sudo fc-cache -fv
+  ```
+  The Pillow overlay generator will automatically detect and fall back to `DejaVuSans-Bold.ttf`.
 
-### YouTube Authentication Setup
-Generate a YouTube OAuth refresh token locally:
-```bash
-python get_refresh_token.py
-```
-This opens a local browser server to auth with Google and prints the credentials to paste into your `.env` file under `YT_REFRESH_TOKEN`.
+---
+
+## ⚖️ License & Disclaimer
+
+This project is built for educational, portfolio, and automated content creation purposes. Ensure compliance with [Reddit's API Terms](https://www.reddit.com/wiki/api-terms) and [YouTube's Community Guidelines & Policies](https://www.youtube.com/howyoutubeworks/policies/community-guidelines/) when publishing curated media.

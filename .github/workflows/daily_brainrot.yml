@@ -1,19 +1,17 @@
 name: Reddit Shorts Bot
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SCHEDULE: 4 runs per day (times are in UTC).
-# Your .env has IST times: 09:00, 13:00, 17:00, 21:00 IST
+# SCHEDULE: 3 runs per day (times are in UTC).
+# Your .env has IST times: 09:00, 15:00, 21:00 IST
 # IST is UTC+5:30, so subtract 5h30m to get UTC equivalents:
 #   09:00 IST → 03:30 UTC
-#   13:00 IST → 07:30 UTC
-#   17:00 IST → 11:30 UTC
+#   15:00 IST → 09:30 UTC
 #   21:00 IST → 15:30 UTC
 # ─────────────────────────────────────────────────────────────────────────────
 on:
   schedule:
     - cron: "30 3 * * *"   # 09:00 IST
-    - cron: "30 7 * * *"   # 13:00 IST
-    - cron: "30 11 * * *"  # 17:00 IST
+    - cron: "30 9 * * *"   # 15:00 IST
     - cron: "30 15 * * *"  # 21:00 IST
 
   # Allow running manually from the GitHub Actions UI

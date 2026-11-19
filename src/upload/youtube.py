@@ -65,7 +65,7 @@ def count_uploads_last_24h() -> int:
 
 
 def can_upload_now() -> bool:
-    """Check if we are within the limit of max 4 uploads per day."""
+    """Check if we are within the limit of max uploads per day."""
     uploads_today = count_uploads_last_24h()
     logger.info(f"Uploads in last 24 hours: {uploads_today} (Limit: {config.MAX_VIDEOS_PER_DAY})")
     return uploads_today < config.MAX_VIDEOS_PER_DAY

@@ -76,7 +76,7 @@ By default, the pipeline operates in **Curator Mode** (`CURATOR_MODE=True`), des
 * **Resumable YouTube OAuth2 Publishing**: Seamless chunked resumable upload script with automatic categorization, tags, and disclaimer inclusion.
 * **Smart Scheduler & De-duplication**:
   * Prevents duplicate video uploads via `data/database/processed_reddit_posts.json`.
-  * Enforces daily video limits (`MAX_VIDEOS_PER_DAY=4`) and designated upload hours.
+  * Enforces daily video limits (`MAX_VIDEOS_PER_DAY=3`) and designated upload hours.
   * Rotates subreddits to prevent repetitive content.
 
 ---
@@ -264,7 +264,7 @@ python run_pipeline.py --force
 ```
 
 ### 3. Scheduled Execution (Production Mode)
-Checks if the current system time matches one of your designated `UPLOAD_SCHEDULE_TIMES` (e.g. `09:00, 13:00, 17:00, 21:00`) and whether the daily upload limit (`MAX_VIDEOS_PER_DAY=4`) has been reached:
+Checks if the current system time matches one of your designated `UPLOAD_SCHEDULE_TIMES` (e.g. `09:00, 15:00, 21:00`) and whether the daily upload limit (`MAX_VIDEOS_PER_DAY=3`) has been reached:
 ```bash
 python run_pipeline.py
 ```
@@ -286,7 +286,7 @@ python run_pipeline.py
 
 ## ☁️ Automated Cloud Deployment (GitHub Actions)
 
-This repository includes a fully configured GitHub Actions workflow (`.github/workflows/daily_brainrot.yml`) that automatically runs the bot 4 times a day on a free GitHub-hosted Ubuntu runner.
+This repository includes a fully configured GitHub Actions workflow (`.github/workflows/daily_brainrot.yml`) that automatically runs the bot 3 times a day on a free GitHub-hosted Ubuntu runner.
 
 ### How to Enable GitHub Actions:
 1. Push your repository to GitHub (Private repository recommended).
@@ -314,7 +314,7 @@ This repository includes a fully configured GitHub Actions workflow (`.github/wo
 Reddit_Video_Memes_YT_Automation/
 ├── .github/
 │   └── workflows/
-│       └── daily_brainrot.yml        # 4x/day scheduled GitHub Actions runner
+│       └── daily_brainrot.yml        # 3x/day scheduled GitHub Actions runner
 ├── data/
 │   ├── assets/                       # Channel profile pics, reaction clips, sound effects
 │   │   ├── Diet Joke.jpg             # Default channel avatar
@@ -366,8 +366,8 @@ Reddit_Video_Memes_YT_Automation/
 | `YT_CLIENT_SECRET_VALUE`| `""`| Google Cloud OAuth Client Secret |
 | `YT_REFRESH_TOKEN` | `""` | OAuth refresh token from `get_refresh_token.py` |
 | `YOUTUBE_PRIVACY` | `public` | Upload visibility (`public`, `unlisted`, `private`) |
-| `MAX_VIDEOS_PER_DAY` | `4` | Daily upload quota limit |
-| `UPLOAD_SCHEDULE_TIMES`| `09:00, 13:00, 17:00, 21:00` | Scheduled time windows |
+| `MAX_VIDEOS_PER_DAY` | `3` | Daily upload quota limit |
+| `UPLOAD_SCHEDULE_TIMES`| `09:00, 15:00, 21:00` | Scheduled time windows |
 
 ---
 

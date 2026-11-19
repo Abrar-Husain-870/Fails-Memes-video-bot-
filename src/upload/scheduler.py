@@ -82,7 +82,7 @@ def check_scheduler_run(force: bool = False) -> bool:
         True if the pipeline should run and upload, False otherwise.
     """
     if not can_upload_now():
-        logger.info("Scheduler Check: Blocked (daily limit of 4 uploads reached)")
+        logger.info(f"Scheduler Check: Blocked (daily limit of {config.MAX_VIDEOS_PER_DAY} uploads reached)")
         return False
         
     if force:

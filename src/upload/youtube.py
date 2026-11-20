@@ -137,7 +137,8 @@ def upload_short(
     tags: List[str] = None,
     category_id: str = "22",
     privacy: str = "public",
-    retries: int = 3
+    retries: int = 3,
+    ignore_limits: bool = False
 ) -> str:
     """
     Upload video to YouTube Shorts with automatic chunked retries and rate limiting.
@@ -152,7 +153,7 @@ def upload_short(
         logger.error(f"Upload failed: Video not found at {video_path}")
         return ""
         
-    if not can_upload_now():
+    if not ignore_limits and not can_upload_now():
         logger.error(f"Upload aborted: Daily upload limit reached ({config.MAX_VIDEOS_PER_DAY}/day)")
         return ""
 

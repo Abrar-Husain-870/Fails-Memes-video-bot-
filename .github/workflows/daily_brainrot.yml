@@ -33,6 +33,11 @@ on:
         description: "Override subreddit (leave blank to use .env list)"
         required: false
         default: ""
+      ignore_limit:
+        description: "Bypass 24h upload limit (for manual testing)"
+        required: false
+        default: true
+        type: boolean
 
 # Prevent two runs from overlapping and corrupting the database
 concurrency:
@@ -132,12 +137,18 @@ jobs:
           # Build the command
           STYLE="${{ github.event.inputs.style || 'random' }}"
           SUB="${{ github.event.inputs.subreddit }}"
+          IGNORE_LIMIT="${{ github.event.inputs.ignore_limit }}"
 
           CMD="python run_pipeline.py --force --style $STYLE"
 
           # Append optional subreddit override from manual dispatch
           if [ -n "$SUB" ]; then
             CMD="$CMD --subreddit $SUB"
+          fi
+
+          # If manually dispatched and ignore_limit is true (default), bypass daily upload limit
+          if [ "$IGNORE_LIMIT" = "true" ]; then
+            CMD="$CMD --ignore-limits"
           fi
 
           echo "Running: $CMD"

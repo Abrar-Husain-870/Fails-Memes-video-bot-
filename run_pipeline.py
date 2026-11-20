@@ -36,7 +36,7 @@ from src.video import (
     render_short,
     get_cat_reaction_clip,
 )
-from src.upload import upload_short, check_scheduler_run
+from src.upload import upload_short, check_scheduler_run, can_upload_now
 
 # Global timeout for safety (40 minutes)
 PIPELINE_TIMEOUT = 40 * 60
@@ -72,6 +72,8 @@ def main() -> None:
         )
         ap.add_argument("--no-upload", action="store_true", help="Skip YouTube upload phase")
         ap.add_argument("--force", action="store_true", help="Ignore scheduler slots, run immediately")
+        ap.add_argument("--ignore-limits", action="store_true",
+                        help="Bypass daily upload limit (useful for manual runs and testing)")
         ap.add_argument("--style", default="random", 
                         choices=["random", "chaotic", "meme", "story", "npc"],
                         help="Video/caption styling (default: random)")
@@ -96,12 +98,16 @@ def main() -> None:
             should_run = True
             logger.info("Scheduler Check: Bypassed (--no-upload specified)")
         else:
-            should_run = check_scheduler_run(force=args.force)
+            should_run = check_scheduler_run(force=args.force, ignore_limits=args.ignore_limits)
         log_stage_finish("Scheduler Check", {"should_run": should_run})
         
         if not should_run:
-            print("\n[INFO] Pipeline run skipped by Scheduler. (Not inside an active time slot).")
-            print("   Use '--force' to bypass this check.")
+            if not args.ignore_limits and not can_upload_now():
+                print(f"\n[INFO] Pipeline run skipped by Scheduler: Daily upload limit reached ({config.MAX_VIDEOS_PER_DAY} uploads in last 24h).")
+                print("   Use '--ignore-limits' to bypass this check.")
+            else:
+                print("\n[INFO] Pipeline run skipped by Scheduler. (Not inside an active time slot).")
+                print("   Use '--force' to bypass this check.")
             sys.exit(0)
 
         # Style & Voice Mapping
@@ -465,7 +471,8 @@ def main() -> None:
                     description=optimized_meta["description"],
                     tags=optimized_meta["tags"],
                     category_id=optimized_meta["category_id"],
-                    privacy=args.privacy
+                    privacy=args.privacy,
+                    ignore_limits=args.ignore_limits
                 )
 
                 if video_id:

@@ -709,8 +709,11 @@ def render_curator_short(
                 header_input_idx = current_idx
                 inputs.extend(["-loop", "1", "-i", str(creator_header_path)])
                 current_idx += 1
+            else:
+                logger.error(f"Creator header card path does not exist: {creator_header_path}")
         except Exception as e:
-            logger.warning(f"Could not generate creator header card: {e}")
+            import traceback
+            logger.error(f"Could not generate creator header card: {e}\n{traceback.format_exc()}")
     
     # 3. Build filter chains
     filter_chains = []

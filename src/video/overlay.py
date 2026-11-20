@@ -400,14 +400,19 @@ def _create_circular_avatar(img_path: Path | str, size: int = 132) -> Image.Imag
                 
     if path.exists():
         raw = Image.open(path).convert("RGBA")
-        import numpy as np
-        arr = np.array(raw)
-        # Isolate content bounding box (skip outer white background)
-        is_content = (arr[:, :, 0] < 240) | (arr[:, :, 1] < 240) | (arr[:, :, 2] < 240)
-        ys, xs = np.where(is_content)
-        if len(xs) > 0 and len(ys) > 0:
-            tight_logo = raw.crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
-        else:
+        tight_logo = None
+        try:
+            import numpy as np
+            arr = np.array(raw)
+            # Isolate content bounding box (skip outer white background)
+            is_content = (arr[:, :, 0] < 240) | (arr[:, :, 1] < 240) | (arr[:, :, 2] < 240)
+            ys, xs = np.where(is_content)
+            if len(xs) > 0 and len(ys) > 0:
+                tight_logo = raw.crop((int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1))
+        except Exception as e:
+            logger.debug(f"Numpy bounding box crop skipped: {e}")
+            
+        if tight_logo is None:
             min_dim = min(raw.size)
             left = (raw.width - min_dim) // 2
             top = (raw.height - min_dim) // 2
@@ -416,11 +421,11 @@ def _create_circular_avatar(img_path: Path | str, size: int = 132) -> Image.Imag
         # Scale logo with generous inner breathing room (74% of circle diameter)
         # to ensure there is plenty of clean padding and no text touches the border
         target_w = int(size * 0.74)
-        scale_factor = target_w / tight_logo.width
+        scale_factor = target_w / max(tight_logo.width, 1)
         target_h = int(tight_logo.height * scale_factor)
         if target_h > int(size * 0.74):
             target_h = int(size * 0.74)
-            target_w = int(tight_logo.width * (target_h / tight_logo.height))
+            target_w = int(tight_logo.width * (target_h / max(tight_logo.height, 1)))
             
         tight_logo = tight_logo.resize((target_w, target_h), Image.Resampling.LANCZOS)
     else:
@@ -549,7 +554,16 @@ def generate_creator_header_card(
     # Fonts
     font_name = None
     font_caption = None
-    for fp in ["C:/Windows/Fonts/segoeuib.ttf", "C:/Windows/Fonts/arialbd.ttf", "arialbd.ttf", "DejaVuSans-Bold.ttf"]:
+    name_paths = [
+        "C:/Windows/Fonts/segoeuib.ttf",
+        "C:/Windows/Fonts/arialbd.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "DejaVuSans-Bold.ttf",
+        "arialbd.ttf",
+        "LiberationSans-Bold.ttf",
+    ]
+    for fp in name_paths:
         try:
             font_name = ImageFont.truetype(fp, 52)
             font_caption = ImageFont.truetype(fp, 54)
@@ -561,7 +575,16 @@ def generate_creator_header_card(
         font_caption = ImageFont.load_default()
         
     font_handle = None
-    for fp in ["C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/arial.ttf", "arial.ttf", "DejaVuSans.ttf"]:
+    handle_paths = [
+        "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "DejaVuSans.ttf",
+        "arial.ttf",
+        "LiberationSans-Regular.ttf",
+    ]
+    for fp in handle_paths:
         try:
             font_handle = ImageFont.truetype(fp, 40)
             break
@@ -571,7 +594,13 @@ def generate_creator_header_card(
         font_handle = ImageFont.load_default()
         
     font_emoji = None
-    for fp in ["C:/Windows/Fonts/seguiemj.ttf", "C:/Windows/Fonts/seguisym.ttf"]:
+    emoji_paths = [
+        "C:/Windows/Fonts/seguiemj.ttf",
+        "C:/Windows/Fonts/seguisym.ttf",
+        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+        "NotoColorEmoji.ttf",
+    ]
+    for fp in emoji_paths:
         try:
             font_emoji = ImageFont.truetype(fp, 48)
             break
@@ -633,7 +662,10 @@ def generate_creator_header_card(
             if is_em:
                 em_mid_y = (bbox[1] + bbox[3]) / 2.0
                 em_y = caption_y + int(round(text_mid_y - em_mid_y))
-                draw.text((cur_x, em_y), seg, font=f, embedded_color=True)
+                try:
+                    draw.text((cur_x, em_y), seg, font=f, embedded_color=True)
+                except Exception:
+                    draw.text((cur_x, em_y), seg, font=f, fill=(15, 20, 25, 255))
             else:
                 draw.text((cur_x, caption_y), seg, font=f, fill=(15, 20, 25, 255))
             cur_x += seg_w + (4 if is_em else 0)

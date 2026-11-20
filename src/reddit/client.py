@@ -54,21 +54,29 @@ def _get_redlib_instances(exclude_anubis: bool = False) -> List[str]:
         except Exception as e:
             logger.warning(f"Failed to fetch public Redlib instances JSON: {e}")
 
-        # Curated fallbacks that are historically reliable
+        # Curated fallbacks that are historically reliable (prioritizing confirmed active instances)
         fallbacks = [
-            "https://safereddit.com",
+            "https://redlib.reallyaweso.me",
+            "https://redlib.zanity.net",
+            "https://redlib.slipfox.xyz",
             "https://redlib.catsarch.com",
             "https://redlib.privacyredirect.com",
-            "https://redlib.slipfox.xyz",
-            "https://redlib.reallyaweso.me",
             "https://redlib.private.coffee",
             "https://redlib.perennialte.ch",
         ]
+        # Exclude instances known to stall or hang connections
+        blocked = ["reddit.jeremyh.xyz", "safereddit.com", "redlib.nadeko.net", "redlib.freedit.eu"]
+        filtered = [inst for inst in instances if not any(b in inst for b in blocked)]
+        
         for fb in fallbacks:
-            if fb not in instances:
-                instances.append(fb)
+            if fb not in filtered:
+                filtered.append(fb)
+                
+        # Put preferred reliable instances first
+        preferred = ["https://redlib.reallyaweso.me", "https://redlib.zanity.net"]
+        filtered.sort(key=lambda x: 0 if any(p in x for p in preferred) else 1)
 
-        _cached_redlib_instances = instances
+        _cached_redlib_instances = filtered
         logger.info(f"Loaded {len(_cached_redlib_instances)} Redlib proxy instances.")
     
     if exclude_anubis:
@@ -466,9 +474,7 @@ def _fetch_with_rss(subreddit: str, sort: str = "best") -> List[dict]:
 
 def _fetch_with_redlib(subreddit: str, sort: str = "best") -> List[dict]:
     """Fetch posts using public Redlib proxy instances without API keys."""
-    instances = _get_redlib_instances(exclude_anubis=False)
-    # Prioritize safereddit.com as it is historically the most stable for scraping listings
-    instances = sorted(instances, key=lambda x: "safereddit.com" not in x)
+    instances = _get_redlib_instances(exclude_anubis=True)
     
     # Try up to 8 instances
     for instance in instances[:8]:
@@ -479,14 +485,15 @@ def _fetch_with_redlib(subreddit: str, sort: str = "best") -> List[dict]:
         logger.info(f"Fetching posts from Redlib instance: {url}")
         try:
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"}
-            response = requests.get(url, headers=headers, timeout=12)
+            response = requests.get(url, headers=headers, timeout=(3.5, 6.0))
             response.raise_for_status()
             response.encoding = "utf-8"
             
             html_content = response.text
             
             # If the instance returned an error or challenge, skip it
-            if "anubis" in html_content.lower() or "challenge" in html_content.lower() or "verifying your browser" in html_content.lower():
+            challenge_terms = ["anubis", "challenge", "verifying your browser", "not a bot", "security check", "just a moment", "cloudflare"]
+            if any(term in html_content.lower() for term in challenge_terms):
                 logger.warning(f"Redlib instance {instance} returned a verification challenge. Trying next...")
                 continue
                 

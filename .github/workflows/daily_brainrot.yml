@@ -69,11 +69,13 @@ jobs:
       - name: Verify FFmpeg & Fonts
         run: |
           if ! command -v ffmpeg &> /dev/null; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg fonts-dejavu-core
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
           else
             echo "FFmpeg is already available:"
             ffmpeg -version | head -n 1
           fi
+          # Ensure TrueType fonts are available for Pillow creator card overlays
+          sudo apt-get install -y -qq --no-install-recommends fonts-dejavu-core fonts-liberation || true
 
       # ── 4. Python Dependencies ───────────────────────────────────────────────
       - name: Install Python dependencies

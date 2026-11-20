@@ -179,3 +179,4 @@ Run the commentary pipeline locally without uploading to verify:
 python run_pipeline.py --force --no-upload --style chaotic
 ```
 Check `data/output/final_short.mp4` to inspect the generated gameplay short with voiceover and subtitles.
+

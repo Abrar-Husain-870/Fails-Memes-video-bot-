@@ -315,6 +315,11 @@ Reddit_Video_Memes_YT_Automation/
 ├── .github/
 │   └── workflows/
 │       └── daily_brainrot.yml        # 3x/day scheduled GitHub Actions runner
+├── archive/
+│   └── commentary_mode_reference/    # Complete blueprint & rollback files for Commentary Mode
+│       ├── README.md                 # Full documentation of commentary, gameplay & cat reaction pipeline
+│       ├── .env.commentary.example   # Commentary mode environment template
+│       └── workflow_commentary_mode.yml # GitHub Actions workflow with clips caching
 ├── data/
 │   ├── assets/                       # Channel profile pics, reaction clips, sound effects
 │   │   ├── Diet Joke.jpg             # Default channel avatar
@@ -352,6 +357,7 @@ Reddit_Video_Memes_YT_Automation/
 | `SUBREDDITS` | `Whatcouldgowrong, Unexpected, AccidentalSlapStick` | Target subreddits for content ingestion |
 | `MAX_MEME_DURATION` | `59` | Max allowed video length in seconds |
 | `MIN_MEME_DURATION` | `3` | Min allowed video length in seconds |
+| `FFMPEG_PRESET` | `veryfast` | FFmpeg CPU encoding preset (`ultrafast`, `veryfast`, `fast`, `medium`) |
 | `PROFILE_PICTURE_PATH`| `"data/assets/Diet Joke.jpg"` | Path to your channel avatar image |
 | `CHANNEL_DISPLAY_NAME`| `"Diet Joke"` | Display name shown on Creator Header Card |
 | `CHANNEL_HANDLE` | `"@DietJoke"` | Handle shown below display name |

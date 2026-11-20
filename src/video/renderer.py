@@ -616,7 +616,7 @@ def render_short(
         "-map", audio_map_tag,
         "-c:v", "libx264",
         "-r", str(config.RENDER_FPS),
-        "-preset", "medium",
+        "-preset", getattr(config, "FFMPEG_PRESET", "veryfast"),
         "-crf", "18",
         "-profile:v", "high",
         "-level", "4.2",
@@ -628,7 +628,8 @@ def render_short(
         str(output_path)
     ])
     
-    logger.info(f"Running FFmpeg render (60 FPS, preset: medium, output: {output_path.name})")
+    preset_name = getattr(config, "FFMPEG_PRESET", "veryfast")
+    logger.info(f"Running FFmpeg render (60 FPS, preset: {preset_name}, output: {output_path.name})")
     
     try:
         r = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=RENDER_TIMEOUT)
@@ -853,7 +854,7 @@ def render_curator_short(
     cmd.extend([
         "-c:v", "libx264",
         "-r", str(config.RENDER_FPS),
-        "-preset", "medium",
+        "-preset", getattr(config, "FFMPEG_PRESET", "veryfast"),
         "-crf", "18",
         "-profile:v", "high",
         "-level", "4.2"
@@ -870,7 +871,8 @@ def render_curator_short(
         str(output_path)
     ])
     
-    logger.info(f"Running FFmpeg Curator Render (60 FPS, preset: medium, output: {output_path.name})")
+    preset_name = getattr(config, "FFMPEG_PRESET", "veryfast")
+    logger.info(f"Running FFmpeg Curator Render (60 FPS, preset: {preset_name}, output: {output_path.name})")
     
     try:
         r = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=RENDER_TIMEOUT)

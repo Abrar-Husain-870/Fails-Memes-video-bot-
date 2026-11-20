@@ -173,6 +173,7 @@ YTDL_FORMAT = _env(
 RENDER_FPS = int(_env("RENDER_FPS", "60"))
 RENDER_WIDTH = 1080
 RENDER_HEIGHT = 1920
+FFMPEG_PRESET = _env("FFMPEG_PRESET", "veryfast")
 CAPTION_STYLE = _env("CAPTION_STYLE", "chaotic")  # chaotic, meme, story, npc
 CAPTION_FONT = _env("CAPTION_FONT", "Impact")
 

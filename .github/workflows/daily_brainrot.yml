@@ -54,8 +54,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Fetch full history so git commit works properly
-          fetch-depth: 0
+          # Fetch recent history for commits and pushes
+          fetch-depth: 5
           token: ${{ secrets.GITHUB_TOKEN }}
 
       # ── 2. Python Setup ─────────────────────────────────────────────────────
@@ -65,31 +65,21 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      # ── 3. System Dependencies ───────────────────────────────────────────────
-      - name: Install FFmpeg & fonts
+      # ── 3. System Dependencies (Pre-installed on ubuntu-latest) ──────────────
+      - name: Verify FFmpeg & Fonts
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fonts-liberation
-          # Install Impact font equivalent (Liberation fonts cover this)
-          fc-cache -fv
+          if ! command -v ffmpeg &> /dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg fonts-dejavu-core
+          else
+            echo "FFmpeg is already available:"
+            ffmpeg -version | head -n 1
+          fi
 
       # ── 4. Python Dependencies ───────────────────────────────────────────────
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      # ── 5. Restore Background Clips Cache ───────────────────────────────────
-      # Caches downloaded & sliced background clips between runs.
-      # Without this, every run would re-download ~500MB from YouTube.
-      - name: Restore background clips cache
-        id: cache-clips
-        uses: actions/cache/restore@v4
-        with:
-          path: data/clips/
-          key: background-clips-${{ runner.os }}-v1
-          restore-keys: |
-            background-clips-${{ runner.os }}-
-
-      # ── 6. Run the Pipeline ──────────────────────────────────────────────────
+      # ── 5. Run the Pipeline ──────────────────────────────────────────────────
       - name: Run Reddit Shorts Pipeline
         env:
           # ── Reddit (optional — leave blank to use anonymous RSS fallback) ──
@@ -151,16 +141,7 @@ jobs:
           echo "Running: $CMD"
           $CMD
 
-      # ── 7. Save Background Clips Cache ──────────────────────────────────────
-      # Saves the freshly downloaded/sliced clips for the next run.
-      - name: Save background clips cache
-        uses: actions/cache/save@v4
-        if: always()
-        with:
-          path: data/clips/
-          key: background-clips-${{ runner.os }}-v1
-
-      # ── 8. Persist Database Back to Repo ────────────────────────────────────
+      # ── 6. Persist Database Back to Repo ────────────────────────────────────
       # Commits processed_posts.json and upload_history.json back to the repo
       # so the next run knows which posts have been used and tracks daily limits.
       - name: Commit database updates

@@ -1,0 +1,166 @@
+name: Reddit Shorts Bot (Commentary Mode Reference)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMMENTARY MODE GITHUB ACTIONS WORKFLOW REFERENCE
+# ─────────────────────────────────────────────────────────────────────────────
+# This workflow includes background clips caching ('data/clips/') needed when
+# CURATOR_MODE=False to prevent re-downloading gameplay footage on every run.
+#
+# Times are in UTC (IST is UTC+5:30):
+#   09:00 IST → 03:30 UTC
+#   15:00 IST → 09:30 UTC
+#   21:00 IST → 15:30 UTC
+# ─────────────────────────────────────────────────────────────────────────────
+on:
+  schedule:
+    - cron: "30 3 * * *"   # 09:00 IST
+    - cron: "30 9 * * *"   # 15:00 IST
+    - cron: "30 15 * * *"  # 21:00 IST
+
+  workflow_dispatch:
+    inputs:
+      style:
+        description: "Caption style (leave blank for random)"
+        required: false
+        default: "random"
+        type: choice
+        options: [random, chaotic, meme, story, npc]
+      privacy:
+        description: "YouTube upload visibility"
+        required: false
+        default: "public"
+        type: choice
+        options: [public, unlisted, private]
+      subreddit:
+        description: "Override subreddit (leave blank to use .env list)"
+        required: false
+        default: ""
+
+concurrency:
+  group: reddit-shorts-pipeline
+  cancel-in-progress: false
+
+jobs:
+  generate-and-upload:
+    name: "Generate & Upload Reddit Short"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: write
+
+    steps:
+      # ── 1. Checkout ─────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Python Setup ─────────────────────────────────────────────────────
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      # ── 3. System Dependencies ───────────────────────────────────────────────
+      - name: Verify FFmpeg & Fonts
+        run: |
+          if ! command -v ffmpeg &> /dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg fonts-dejavu-core
+          else
+            echo "FFmpeg is already available:"
+            ffmpeg -version | head -n 1
+          fi
+
+      # ── 4. Python Dependencies ───────────────────────────────────────────────
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # ── 5. Restore Background Clips Cache ───────────────────────────────────
+      # Caches downloaded & sliced gameplay background clips between runs.
+      - name: Restore background clips cache
+        id: cache-clips
+        uses: actions/cache/restore@v4
+        with:
+          path: data/clips/
+          key: background-clips-${{ runner.os }}-v1
+          restore-keys: |
+            background-clips-${{ runner.os }}-
+
+      # ── 6. Run the Pipeline ──────────────────────────────────────────────────
+      - name: Run Reddit Shorts Pipeline
+        env:
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
+
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID || secrets.YT_MEME_CLIENT_ID }}
+          YT_CLIENT_SECRET_VALUE: ${{ secrets.YT_CLIENT_SECRET_VALUE || secrets.YT_MEME_CLIENT_SECRET_VALUE }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN || secrets.YT_MEME_REFRESH_TOKEN }}
+          YT_MEME_CLIENT_ID: ${{ secrets.YT_CLIENT_ID || secrets.YT_MEME_CLIENT_ID }}
+          YT_MEME_CLIENT_SECRET_VALUE: ${{ secrets.YT_CLIENT_SECRET_VALUE || secrets.YT_MEME_CLIENT_SECRET_VALUE }}
+          YT_MEME_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN || secrets.YT_MEME_REFRESH_TOKEN }}
+
+          SUBREDDITS: ${{ secrets.SUBREDDITS }}
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          TTS_PROVIDER: ${{ secrets.TTS_PROVIDER }}
+          TTS_VOICE: ${{ secrets.TTS_VOICE }}
+          NARRATION_MODE: ${{ secrets.NARRATION_MODE }}
+          YOUTUBE_PRIVACY: ${{ github.event.inputs.privacy || 'public' }}
+          
+          RSS_ENABLED: ${{ secrets.RSS_ENABLED || 'true' }}
+          RSS_FEEDS: ${{ secrets.RSS_FEEDS }}
+
+          ENABLE_CONTENT_SAFETY: ${{ secrets.ENABLE_CONTENT_SAFETY }}
+          SAFETY_MODE: ${{ secrets.SAFETY_MODE }}
+
+          METADATA_MENTIONS: ""
+
+        run: |
+          STYLE="${{ github.event.inputs.style || 'random' }}"
+          SUB="${{ github.event.inputs.subreddit }}"
+
+          CMD="python run_pipeline.py --force --style $STYLE"
+
+          if [ -n "$SUB" ]; then
+            CMD="$CMD --subreddit $SUB"
+          fi
+
+          echo "Running: $CMD"
+          $CMD
+
+      # ── 7. Save Background Clips Cache ──────────────────────────────────────
+      - name: Save background clips cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: data/clips/
+          key: background-clips-${{ runner.os }}-v1
+
+      # ── 8. Persist Database Back to Repo ────────────────────────────────────
+      - name: Commit database updates
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add data/database/*.json || true
+
+          if git diff --cached --quiet; then
+            echo "No database changes to commit."
+          else
+            git commit -m "chore(bot): update tracking database [skip ci]"
+            git push
+          fi

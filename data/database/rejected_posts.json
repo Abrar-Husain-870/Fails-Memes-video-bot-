@@ -54,5 +54,13 @@
     "detection_category": "Dangerous challenges, Criminal instructions",
     "reason": "The content describes using an ATV (All-Terrain Vehicle) and a tow strap for 'indoor ceiling demolition.' This implies a highly dangerous and likely illegal activity involving heavy machinery in a residential or indoor setting, which poses a severe risk of structural collapse, fire, or injury. It falls under dangerous challenges and potentially criminal instructions (unauthorized demolition or property damage).",
     "timestamp": "2026-11-02T20:51:42Z"
+  },
+  {
+    "reddit_id": "1xowcq5",
+    "subreddit": "Whatcouldgowrong",
+    "risk_score": "High Risk",
+    "detection_category": "Dangerous challenges, Graphic violence",
+    "reason": "The content describes a person jumping from a building with a parachute. This falls under 'Dangerous challenges' as it involves high-risk stunts that could result in severe injury or death. Additionally, if the video shows the jump or a crash, it may constitute 'Graphic violence' or 'Suicide or self-harm' depending on the context (intentional vs. stunt). Automated publishing is unsafe without human review to verify the nature of the act and the outcome.",
+    "timestamp": "2026-11-21T21:10:25Z"
   }
 ]
